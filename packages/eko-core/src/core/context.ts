@@ -7,6 +7,20 @@ import {
   Workflow,
   WorkflowAgent,
 } from "../types";
+import {
+  ControlState,
+  DEFAULT_CONTROL_STATE,
+  DirectorDirectives,
+  Telemetry,
+  getDirectorDirectives,
+  updateControl,
+} from "./director";
+
+type DirectorHistoryRecord = {
+  signature: string;
+  success: boolean;
+  timestamp: number;
+};
 
 export default class Context {
   taskId: string;
@@ -19,6 +33,9 @@ export default class Context {
   conversation: string[] = [];
   private pauseStatus: 0 | 1 | 2 = 0;
   readonly currentStepControllers: Set<AbortController> = new Set();
+  directorState: ControlState;
+  directorDirectives: DirectorDirectives;
+  private directorHistory: DirectorHistoryRecord[] = [];
 
   constructor(
     taskId: string,
@@ -32,6 +49,41 @@ export default class Context {
     this.chain = chain;
     this.variables = new Map();
     this.controller = new AbortController();
+    this.directorState = { ...DEFAULT_CONTROL_STATE };
+    this.directorDirectives = getDirectorDirectives();
+  }
+
+  recordDirectorStep(signature: string, success: boolean): number {
+    const record: DirectorHistoryRecord = {
+      signature,
+      success,
+      timestamp: Date.now(),
+    };
+    this.directorHistory.push(record);
+    if (this.directorHistory.length > 12) {
+      this.directorHistory.shift();
+    }
+    if (success) {
+      return 0;
+    }
+    let loopDepth = 0;
+    for (let i = this.directorHistory.length - 1; i >= 0; i--) {
+      const history = this.directorHistory[i];
+      if (history.success) {
+        break;
+      }
+      if (history.signature !== signature) {
+        break;
+      }
+      loopDepth++;
+    }
+    return Math.min(loopDepth / 3, 1);
+  }
+
+  updateDirector(telemetry: Telemetry): ControlState {
+    this.directorState = updateControl(this.directorState, telemetry);
+    this.directorDirectives = getDirectorDirectives(this.directorState.g);
+    return this.directorState;
   }
 
   async checkAborted(noCheckPause?: boolean): Promise<void> {
@@ -95,6 +147,9 @@ export default class Context {
     });
     this.currentStepControllers.clear();
     this.controller = new AbortController();
+    this.directorState = { ...DEFAULT_CONTROL_STATE };
+    this.directorDirectives = getDirectorDirectives();
+    this.directorHistory = [];
   }
 }
 

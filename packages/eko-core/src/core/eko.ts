@@ -13,6 +13,7 @@ import {
   NormalAgentNode,
 } from "../types/core.types";
 import { checkTaskReplan, replanWorkflow } from "./replan";
+import { Telemetry } from "./director";
 
 export class Eko {
   protected config: EkoConfig;
@@ -138,6 +139,52 @@ export class Eko {
     }, {} as { [key: string]: Agent });
     let agentTree = buildAgentTree(workflow.agents);
     const results: string[] = [];
+    const runTrackedAgent = async (
+      node: NormalAgentNode,
+      agent: Agent
+    ): Promise<{ result: string; agentChain: AgentChain }> => {
+      const agentChain = new AgentChain(node.agent);
+      context.chain.push(agentChain);
+      const signature = `agent:${node.agent.name}`;
+      try {
+        const result = await this.runAgent(context, agent, node, agentChain);
+        node.result = result;
+        const loopSignal = context.recordDirectorStep(signature, true);
+        const telemetry: Telemetry = {
+          lastOutcomeSuccess: true,
+          timeoutOccurred: false,
+          loopSignal,
+        };
+        const state = context.updateDirector(telemetry);
+        if (Log.isEnableDebug()) {
+          Log.debug("Director: agent succeeded", {
+            agent: node.agent.name,
+            e: state.e.toFixed(2),
+            g: state.g.toFixed(2),
+          });
+        }
+        return { result, agentChain };
+      } catch (error: any) {
+        const timeoutOccurred =
+          typeof error?.message === "string" &&
+          error.message.toLowerCase().includes("timeout");
+        const loopSignal = context.recordDirectorStep(signature, false);
+        const telemetry: Telemetry = {
+          lastOutcomeSuccess: false,
+          timeoutOccurred,
+          loopSignal,
+          hardError: true,
+        };
+        const state = context.updateDirector(telemetry);
+        Log.warn("Director: agent failed", {
+          agent: node.agent.name,
+          e: state.e.toFixed(2),
+          g: state.g.toFixed(2),
+        });
+        throw error;
+      }
+    };
+
     while (true) {
       await context.checkAborted();
       let lastAgent: Agent | undefined;
@@ -149,15 +196,9 @@ export class Eko {
         }
         lastAgent = agent;
         const agentNode = agentTree.agent;
-        const agentChain = new AgentChain(agentNode);
-        context.chain.push(agentChain);
-        agentTree.result = await this.runAgent(
-          context,
-          agent,
-          agentTree,
-          agentChain
-        );
-        results.push(agentTree.result);
+        const { result } = await runTrackedAgent(agentTree, agent);
+        agentTree.result = result;
+        results.push(result);
       } else {
         // parallel agent
         const parallelAgents = agentTree.agents;
@@ -170,13 +211,9 @@ export class Eko {
             throw new Error("Unknown Agent: " + agentNode.agent.name);
           }
           lastAgent = agent;
-          const agentChain = new AgentChain(agentNode.agent);
-          context.chain.push(agentChain);
-          const result = await this.runAgent(
-            context,
-            agent,
+          const { result, agentChain } = await runTrackedAgent(
             agentNode,
-            agentChain
+            agent
           );
           return { result: result, agentChain, index };
         };
@@ -191,18 +228,14 @@ export class Eko {
             parallelAgents.map((agent, index) => doRunAgent(agent, index))
           );
           parallelResults.sort((a, b) => a.index - b.index);
-          parallelResults.forEach(({ agentChain }) => {
-            context.chain.push(agentChain);
-          });
           agent_results = parallelResults.map(({ result }) => result);
         } else {
           // serial execution
           for (let i = 0; i < parallelAgents.length; i++) {
-            const { result, agentChain } = await doRunAgent(
+            const { result } = await doRunAgent(
               parallelAgents[i],
               i
             );
-            context.chain.push(agentChain);
             agent_results.push(result);
           }
         }

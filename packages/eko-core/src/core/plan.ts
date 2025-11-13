@@ -11,6 +11,7 @@ import {
   LanguageModelV2StreamPart,
   LanguageModelV2TextPart,
 } from "@ai-sdk/provider";
+import { tuneLLMSettings } from "./director";
 
 export class Planner {
   private taskId: string;
@@ -88,13 +89,42 @@ export class Planner {
     const config = this.context.config;
     const rlm = new RetryLanguageModel(config.llms, config.planLlms);
     rlm.setContext(this.context);
-    const request: LLMRequest = {
+    const baseRequest: LLMRequest = {
       maxTokens: 8192,
       temperature: 0.7,
       messages: messages,
       abortSignal: this.context.controller.signal,
     };
-    const result = await rlm.callStream(request);
+    const request = tuneLLMSettings("planner", baseRequest, this.context.directorState);
+    if (
+      Log.isEnableInfo() &&
+      (baseRequest.temperature !== request.temperature ||
+        baseRequest.topP !== request.topP ||
+        baseRequest.maxTokens !== request.maxTokens)
+    ) {
+      Log.info("Director tuned planner request", {
+        e: this.context.directorState.e.toFixed(2),
+        g: this.context.directorState.g.toFixed(2),
+        temperature: request.temperature,
+        topP: request.topP,
+        maxTokens: request.maxTokens,
+      });
+    }
+    let result;
+    try {
+      result = await rlm.callStream(request);
+    } catch (error: any) {
+      const loopSignal = this.context.recordDirectorStep("planner", false);
+      this.context.updateDirector({
+        lastOutcomeSuccess: false,
+        timeoutOccurred:
+          typeof error?.message === "string" &&
+          error.message.toLowerCase().includes("timeout"),
+        loopSignal,
+        hardError: true,
+      });
+      throw error;
+    }
     const reader = result.stream.getReader();
     let streamText = "";
     let thinkingText = "";
@@ -143,6 +173,15 @@ export class Planner {
         }
       }
     } catch (e: any) {
+      const loopSignal = this.context.recordDirectorStep("planner", false);
+      this.context.updateDirector({
+        lastOutcomeSuccess: false,
+        timeoutOccurred:
+          typeof e?.message === "string" &&
+          e.message.toLowerCase().includes("timeout"),
+        loopSignal,
+        hardError: true,
+      });
       if (retryNum < 3) {
         await sleep(1000);
         return await this.doPlan(taskPrompt, messages, saveHistory, ++retryNum);
@@ -180,6 +219,12 @@ export class Planner {
       workflow.taskPrompt = taskPrompt;
     }
     workflow.taskPrompt = workflow.taskPrompt.trim();
+    const loopSignal = this.context.recordDirectorStep("planner", true);
+    this.context.updateDirector({
+      lastOutcomeSuccess: true,
+      timeoutOccurred: false,
+      loopSignal,
+    });
     return workflow;
   }
 }

@@ -40,6 +40,7 @@ import {
 import { doTaskResultCheck } from "../tools/task_result_check";
 import { doTodoListManager } from "../tools/todo_list_manager";
 import { getAgentSystemPrompt, getAgentUserPrompt } from "../prompt/agent";
+import { tuneLLMSettings } from "../core/director";
 
 export type AgentParams = {
   name: string;
@@ -121,7 +122,13 @@ export class Agent {
     const rlm = new RetryLanguageModel(context.config.llms, this.llms);
     rlm.setContext(agentContext);
     let agentTools = tools;
-    while (loopNum < maxReactNum) {
+    const baseMaxReactNum = maxReactNum;
+    while (true) {
+      const adaptiveLimit =
+        baseMaxReactNum + Math.max(0, Math.round(context.directorState.e * 4));
+      if (loopNum >= adaptiveLimit) {
+        break;
+      }
       await context.checkAborted();
       if (mcpClient) {
         const controlMcp = await this.controlMcpTools(
@@ -141,6 +148,11 @@ export class Agent {
           agentTools = mergeTools(_agentTools, mcpTools);
         }
       }
+      agentContext.variables.set("director", {
+        e: context.directorState.e,
+        g: context.directorState.g,
+        directives: { ...context.directorDirectives },
+      });
       await this.handleMessages(agentContext, messages, tools);
       const llm_tools = convertTools(agentTools);
       const results = await callAgentLLM(
@@ -152,7 +164,38 @@ export class Agent {
         undefined,
         0,
         this.callback,
-        this.requestHandler
+        (request) => {
+          const originalSnapshot = {
+            temperature: request.temperature,
+            topP: request.topP,
+            topK: request.topK,
+            maxTokens: request.maxTokens,
+          };
+          const tuned = tuneLLMSettings(
+            "executor",
+            request,
+            context.directorState
+          );
+          Object.assign(request, tuned);
+          if (
+            Log.isEnableInfo() &&
+            (originalSnapshot.temperature !== request.temperature ||
+              originalSnapshot.topP !== request.topP ||
+              originalSnapshot.topK !== request.topK ||
+              originalSnapshot.maxTokens !== request.maxTokens)
+          ) {
+            Log.info("Director tuned executor request", {
+              agent: agentNode.name,
+              e: context.directorState.e.toFixed(2),
+              g: context.directorState.g.toFixed(2),
+              temperature: request.temperature,
+              topP: request.topP,
+              topK: request.topK,
+              maxTokens: request.maxTokens,
+            });
+          }
+          this.requestHandler && this.requestHandler(request);
+        }
       );
       const forceStop = agentContext.variables.get("forceStop");
       if (forceStop) {
@@ -179,8 +222,21 @@ export class Agent {
           messages,
           llm_tools
         );
-        if (completionStatus == "incomplete") {
+        if (
+          completionStatus == "incomplete" &&
+          !context.directorDirectives.allowPartialResults
+        ) {
           continue;
+        }
+        if (
+          completionStatus == "incomplete" &&
+          context.directorDirectives.allowPartialResults
+        ) {
+          Log.info("Director allowing partial task result", {
+            agent: agentNode.name,
+            e: context.directorState.e.toFixed(2),
+            g: context.directorState.g.toFixed(2),
+          });
         }
       }
       return finalResult;
