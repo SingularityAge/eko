@@ -20,6 +20,9 @@
     "@eko-ai/eko": "workspace:*",
     "@eko-ai/eko-web": "workspace:*"
   },
+  "devDependencies": {
+    "typescript": "~4.9.5"
+  },
   "browserslist": {
     "production": [
       ">0.2%",
