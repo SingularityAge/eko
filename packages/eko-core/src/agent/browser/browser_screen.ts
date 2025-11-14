@@ -380,7 +380,7 @@ export default abstract class BaseBrowserScreenAgent extends BaseBrowserAgent {
               description: "Duration in millisecond",
               default: 500,
               minimum: 200,
-              maximum: 10000,
+              maximum: 120000,
             },
           },
           required: ["duration"],
@@ -390,7 +390,7 @@ export default abstract class BaseBrowserScreenAgent extends BaseBrowserAgent {
           agentContext: AgentContext
         ): Promise<ToolResult> => {
           return await this.callInnerTool(() =>
-            sleep((args.duration || 200) as number)
+            this.waitWithHeartbeat(agentContext, (args.duration || 200) as number)
           );
         },
       },

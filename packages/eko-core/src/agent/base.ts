@@ -2,7 +2,7 @@ import config from "../config";
 import Log from "../common/log";
 import * as memory from "../memory";
 import { RetryLanguageModel } from "../llm";
-import { mergeTools } from "../common/utils";
+import { mergeTools, sleep } from "../common/utils";
 import { ToolWrapper } from "../tools/wrapper";
 import { AgentChain, ToolChain } from "../core/chain";
 import Context, { AgentContext } from "../core/context";
@@ -501,6 +501,52 @@ export class Agent {
   ): Promise<void> {
     // Only keep the last image / file, large tool-text-result
     memory.handleLargeContextMessages(messages);
+  }
+
+  protected async waitWithHeartbeat(
+    agentContext: AgentContext,
+    requestedDurationMs: number,
+    maxDurationMs: number = 120000
+  ): Promise<string> {
+    const numericDuration = Number.isFinite(requestedDurationMs)
+      ? Number(requestedDurationMs)
+      : 0;
+    const safeRequested = Math.max(0, Math.floor(numericDuration));
+    const cappedDuration = Math.min(safeRequested, maxDurationMs);
+    const start = Date.now();
+
+    let remaining = cappedDuration;
+    const step =
+      remaining > 0
+        ? Math.max(200, Math.min(2000, Math.floor(remaining / 20) || 200))
+        : 0;
+
+    while (remaining > 0) {
+      await agentContext.context.checkAborted();
+      const chunk = Math.min(step, remaining);
+      await sleep(chunk);
+      remaining -= chunk;
+    }
+
+    const actual = Date.now() - start;
+    const requestedSeconds = safeRequested / 1000;
+    const cappedSeconds = cappedDuration / 1000;
+    const actualSeconds = actual / 1000;
+    const driftSeconds = (actual - cappedDuration) / 1000;
+
+    const parts = [`Waited ${actualSeconds.toFixed(1)}s`];
+    parts.push(
+      safeRequested !== cappedDuration
+        ? `requested ${requestedSeconds.toFixed(1)}s (capped to ${cappedSeconds.toFixed(1)}s)`
+        : `requested ${requestedSeconds.toFixed(1)}s`
+    );
+
+    if (Math.abs(driftSeconds) >= 0.2) {
+      const driftLabel = driftSeconds >= 0 ? `+${driftSeconds.toFixed(1)}s` : `${driftSeconds.toFixed(1)}s`;
+      parts.push(`drift ${driftLabel}`);
+    }
+
+    return parts.join(", ") + ".";
   }
 
   protected async callInnerTool(fun: () => Promise<any>): Promise<ToolResult> {
