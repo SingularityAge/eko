@@ -189,25 +189,36 @@ body {
 }
 
 .sidebar-textarea {
+  width: 100%;
+  min-height: 132px;
   background: rgba(255, 253, 247, 0.7);
   border: 1px solid rgba(194, 165, 134, 0.55);
   border-radius: 18px;
   padding: 14px 16px;
   font-size: 0.95rem;
+  line-height: 1.5;
   color: #5a4632;
+  resize: vertical;
   box-shadow: inset 0 1px 3px rgba(255, 255, 255, 0.55);
-  transition: border 0.2s ease, box-shadow 0.2s ease;
+  transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.sidebar-textarea::placeholder {
+  color: #9c8770;
 }
 
 .sidebar-textarea:focus,
 .sidebar-textarea:focus-visible {
-  border-color: rgba(224, 122, 44, 0.8);
+  outline: none;
+  border-color: rgba(224, 122, 44, 0.82);
   box-shadow: 0 0 0 3px rgba(224, 122, 44, 0.2);
+  background: rgba(255, 252, 244, 0.85);
 }
 
 .sidebar-textarea[disabled] {
   color: #a58d76;
-  background: rgba(250, 242, 232, 0.6);
+  background: rgba(250, 242, 232, 0.65);
+  cursor: not-allowed;
 }
 
 .sidebar-control-grid {
@@ -317,7 +328,7 @@ body {
   justify-content: center;
 }
 
-.sidebar-run-button.ant-btn {
+.sidebar-run-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -331,22 +342,33 @@ body {
   color: #fff;
   box-shadow: 0 18px 32px rgba(199, 112, 47, 0.38);
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  cursor: pointer;
 }
 
-.sidebar-run-button.ant-btn:hover,
-.sidebar-run-button.ant-btn:focus {
+.sidebar-run-button:hover,
+.sidebar-run-button:focus {
   transform: translateY(-1px);
   box-shadow: 0 20px 36px rgba(199, 112, 47, 0.42);
   background: linear-gradient(130deg, #eb8231, #d16f28);
 }
 
-.sidebar-run-button.ant-btn[data-running="true"] {
+.sidebar-run-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(224, 122, 44, 0.22), 0 20px 36px rgba(199, 112, 47, 0.42);
+}
+
+.sidebar-run-button[data-running="true"] {
   background: linear-gradient(130deg, #b85e26, #9f4a1f);
   box-shadow: 0 18px 30px rgba(149, 77, 33, 0.38);
 }
 
-.sidebar-run-button.ant-btn[data-running="true"]:hover {
+.sidebar-run-button[data-running="true"]:hover {
   background: linear-gradient(130deg, #c06528, #a54f21);
+}
+
+.sidebar-run-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
 }
 
 .sidebar-run-button-icon {

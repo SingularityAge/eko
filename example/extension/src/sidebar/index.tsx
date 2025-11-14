@@ -1,6 +1,5 @@
 import { createRoot } from "react-dom/client";
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Input } from "antd";
 import { config } from "@eko-ai/eko";
 
 import "./index.css";
@@ -267,13 +266,14 @@ const AppRun = () => {
               <p>Describe the journey you want Eko to execute end-to-end.</p>
             </div>
           </div>
-          <Input.TextArea
+          <textarea
             rows={4}
             value={prompt}
             disabled={running}
-            placeholder="Your workflow"
+            placeholder="Describe the workflow for Eko"
             onChange={(e) => setPrompt(e.target.value)}
             className="sidebar-textarea"
+            aria-label="Workflow prompt"
           />
         </section>
 
@@ -351,11 +351,12 @@ const AppRun = () => {
         </section>
 
         <footer className="sidebar-footer">
-          <Button
-            type="primary"
+          <button
+            type="button"
             onClick={handleClick}
             className="sidebar-run-button"
             data-running={running}
+            aria-pressed={running}
           >
             <span className="sidebar-run-button-icon">
               {running ? <StopIcon /> : <LaunchIcon />}
@@ -363,7 +364,7 @@ const AppRun = () => {
             <span className="sidebar-run-button-text">
               {running ? "Stop run" : "Launch run"}
             </span>
-          </Button>
+          </button>
         </footer>
       </div>
     </div>
