@@ -2,9 +2,9 @@ import { Agent, AgentContext } from "@eko-ai/eko";
 import { LanguageModelV2ToolCallPart, ToolResult } from "@eko-ai/eko/types";
 
 export default class WriteFileAgent extends Agent {
-  constructor() {
+  constructor(llms?: string[]) {
     super({
-      name: "WriteFile",
+      name: "Writer",
       description:
         "File writing tool, used for writing content to local files.",
       tools: [
@@ -36,7 +36,7 @@ export default class WriteFileAgent extends Agent {
           },
         },
       ],
-      llms: [],
+      llms: llms,
     });
   }
 

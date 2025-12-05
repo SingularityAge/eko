@@ -172,19 +172,56 @@ export async function init(): Promise<ChatAgent | void> {
 
   initAgentServices();
 
+  const baseURL = "https://openrouter.ai/api/v1";
+  const defaultModel = "anthropic/claude-sonnet-4.5";
+
+  // Create named LLM configs for each agent role
   const llms: LLMs = {
     default: {
       provider: "openrouter",
-      model: llmConfig.modelName,
+      model: llmConfig.chatModel || defaultModel,
       apiKey: llmConfig.apiKey,
-      config: {
-        baseURL: "https://openrouter.ai/api/v1",
-      },
+      config: { baseURL },
+    },
+    planner: {
+      provider: "openrouter",
+      model: llmConfig.plannerModel || defaultModel,
+      apiKey: llmConfig.apiKey,
+      config: { baseURL },
+    },
+    chat: {
+      provider: "openrouter",
+      model: llmConfig.chatModel || defaultModel,
+      apiKey: llmConfig.apiKey,
+      config: { baseURL },
+    },
+    navigator: {
+      provider: "openrouter",
+      model: llmConfig.navigatorModel || defaultModel,
+      apiKey: llmConfig.apiKey,
+      config: { baseURL },
+    },
+    writer: {
+      provider: "openrouter",
+      model: llmConfig.writerModel || defaultModel,
+      apiKey: llmConfig.apiKey,
+      config: { baseURL },
     },
   };
 
-  const agents = [new BrowserAgent(), new WriteFileAgent()];
-  chatAgent = new ChatAgent({ llms, agents });
+  // Create agents with their assigned LLM configs
+  const agents = [
+    new BrowserAgent(["navigator"]),  // Navigator agent uses navigator LLM
+    new WriteFileAgent(["writer"]),   // Writer agent uses writer LLM
+  ];
+
+  chatAgent = new ChatAgent({
+    llms,
+    agents,
+    planLlms: ["planner"],  // Planner uses planner LLM
+    chatLlms: ["chat"],     // Chat uses chat LLM
+  });
+
   chatAgent.initMessages().catch((e) => {
     printLog("init messages error: " + e, "error");
   });
