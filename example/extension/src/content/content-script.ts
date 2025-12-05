@@ -1,10 +1,20 @@
 import { BrowserAutomation } from "./browser-automation";
+import { PersonaTraits } from "./keyboard-emulator";
 
-const automation = new BrowserAutomation();
+let automation: BrowserAutomation;
 let isSimulationActive = false;
 
+function initializeAutomation(traits?: Partial<PersonaTraits>): void {
+  automation = new BrowserAutomation(traits);
+}
+
+initializeAutomation();
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "startBrowsing") {
+  if (message.type === "initializePersona") {
+    initializeAutomation(message.data.traits);
+    sendResponse({ success: true });
+  } else if (message.type === "startBrowsing") {
     handleStartBrowsing(message.data);
     sendResponse({ success: true });
   } else if (message.type === "stopBrowsing") {
@@ -12,6 +22,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
   } else if (message.type === "loginEmail") {
     handleEmailLogin(message.data);
+    sendResponse({ success: true });
+  } else if (message.type === "performSearch") {
+    handleSearch(message.data);
     sendResponse({ success: true });
   } else if (message.type === "checkDistraction") {
     handleCheckDistraction().then((url) => {
@@ -57,6 +70,19 @@ async function handleEmailLogin(data: any): Promise<void> {
   await automation.loginToEmail(email, password);
 }
 
+async function handleSearch(data: any): Promise<void> {
+  const { query } = data;
+
+  if (!query) {
+    console.log('No search query provided');
+    return;
+  }
+
+  console.log(`Performing search: ${query}`);
+
+  await automation.performSearch(query);
+}
+
 async function handleCheckDistraction(): Promise<string | null> {
   return await automation.getDistractedAndOpenRelatedTab();
 }
@@ -68,3 +94,7 @@ if (window.location.hostname.includes('protonmail.com')) {
     }
   });
 }
+
+window.addEventListener('load', () => {
+  console.log('PersonaSurfer content script loaded with hyper-realistic input simulation');
+});

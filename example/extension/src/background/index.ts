@@ -461,6 +461,7 @@ function startSimulationLoop(): void {
 
       if (!emailLoginAttempted && brain?.email.credentials.pass) {
         emailLoginAttempted = true;
+        await initializePersonaTraits();
         await attemptEmailLogin();
       }
 
@@ -473,6 +474,13 @@ function startSimulationLoop(): void {
         if (newTab.id) {
           setTimeout(async () => {
             try {
+              await chrome.tabs.sendMessage(newTab.id!, {
+                type: "initializePersona",
+                data: {
+                  traits: personaEngine?.getInputSimulationTraits(),
+                },
+              });
+
               await chrome.tabs.sendMessage(newTab.id!, {
                 type: "startBrowsing",
                 data: {
@@ -503,9 +511,9 @@ function startSimulationLoop(): void {
           try {
             const response = await chrome.tabs.sendMessage(randomTab.id, {
               type: "checkDistraction",
-            });
+            }) as unknown as { url?: string } | undefined;
 
-            if (response?.url) {
+            if (response && response.url) {
               await chrome.tabs.create({ url: response.url, active: false });
               printLog(`Got distracted, opening ${response.url}`, "info");
             }
@@ -518,6 +526,28 @@ function startSimulationLoop(): void {
       console.error("Simulation loop error:", error);
     }
   }, Math.random() * 4000 + 1000);
+}
+
+async function initializePersonaTraits(): Promise<void> {
+  if (!personaEngine) return;
+
+  const traits = personaEngine.getInputSimulationTraits();
+  const tabs = await chrome.tabs.query({});
+
+  printLog(`Initializing persona traits: ${traits.typingSpeed} typing, ${(traits.errorRate * 100).toFixed(0)}% error rate`, "info");
+
+  for (const tab of tabs) {
+    if (tab.id) {
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: "initializePersona",
+          data: { traits },
+        });
+      } catch (e) {
+        console.log(`Could not initialize traits for tab ${tab.id}`);
+      }
+    }
+  }
 }
 
 async function attemptEmailLogin(): Promise<void> {
@@ -537,13 +567,20 @@ async function attemptEmailLogin(): Promise<void> {
     setTimeout(async () => {
       try {
         await chrome.tabs.sendMessage(emailTab.id!, {
+          type: "initializePersona",
+          data: {
+            traits: personaEngine?.getInputSimulationTraits(),
+          },
+        });
+
+        await chrome.tabs.sendMessage(emailTab.id!, {
           type: "loginEmail",
           data: {
             email: brain.email.address,
             password: brain.email.credentials.pass,
           },
         });
-        printLog("Email login attempted", "success");
+        printLog("Email login attempted with hyper-realistic input", "success");
       } catch (e) {
         console.log("Email login failed:", e);
       }

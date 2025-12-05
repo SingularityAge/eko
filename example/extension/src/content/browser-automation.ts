@@ -1,13 +1,27 @@
+import { MouseEmulator } from './mouse-emulator';
+import { KeyboardEmulator, PersonaTraits } from './keyboard-emulator';
+
 export interface BrowserAction {
-  type: 'navigate' | 'scroll' | 'read' | 'click' | 'type' | 'wait';
+  type: 'navigate' | 'scroll' | 'read' | 'click' | 'type' | 'wait' | 'search';
   data?: any;
 }
 
 export class BrowserAutomation {
   private isActive = false;
   private currentAction: BrowserAction | null = null;
+  private mouseEmulator: MouseEmulator;
+  private keyboardEmulator: KeyboardEmulator;
+  private personaTraits: PersonaTraits;
 
-  constructor() {}
+  constructor(traits?: Partial<PersonaTraits>) {
+    this.personaTraits = {
+      typingSpeed: traits?.typingSpeed || 'normal',
+      errorRate: traits?.errorRate || 0.05,
+    };
+
+    this.mouseEmulator = new MouseEmulator();
+    this.keyboardEmulator = new KeyboardEmulator(this.personaTraits);
+  }
 
   async start(): Promise<void> {
     this.isActive = true;
@@ -38,6 +52,9 @@ export class BrowserAutomation {
       case 'type':
         await this.typeText(action.data.selector, action.data.text);
         break;
+      case 'search':
+        await this.performSearch(action.data.query);
+        break;
       case 'wait':
         await this.wait(action.data.duration);
         break;
@@ -52,7 +69,7 @@ export class BrowserAutomation {
     window.location.href = url;
   }
 
-  private async scroll(amount: number = 300): Promise<void> {
+  async scroll(amount: number = 300): Promise<void> {
     const duration = this.randomDelay(500, 2000);
     const start = window.scrollY;
     const startTime = Date.now();
@@ -95,6 +112,10 @@ export class BrowserAutomation {
       await this.wait(this.randomDelay(2000, 5000));
 
       await this.simulateFocusMovement();
+
+      if (Math.random() < 0.1) {
+        await this.hoverRandomElement();
+      }
     }
   }
 
@@ -114,32 +135,36 @@ export class BrowserAutomation {
     await this.wait(this.randomDelay(500, 1500));
   }
 
+  private async hoverRandomElement(): Promise<void> {
+    const interactiveElements = document.querySelectorAll('a, button');
+    if (interactiveElements.length === 0) return;
+
+    const randomElement = interactiveElements[Math.floor(Math.random() * interactiveElements.length)] as HTMLElement;
+    await this.mouseEmulator.moveToElement(randomElement);
+    await this.wait(this.randomDelay(500, 1500));
+  }
+
   private async click(selector: string): Promise<void> {
     const element = document.querySelector(selector) as HTMLElement;
     if (!element) return;
 
     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await this.wait(this.randomDelay(500, 1000));
+    await this.wait(this.randomDelay(300, 700));
 
-    element.click();
+    await this.mouseEmulator.click(element);
   }
 
   private async typeText(selector: string, text: string): Promise<void> {
-    const element = document.querySelector(selector) as HTMLInputElement;
+    const element = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement;
     if (!element) return;
 
-    element.focus();
-    await this.wait(this.randomDelay(300, 800));
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await this.wait(this.randomDelay(300, 700));
 
-    for (const char of text) {
-      element.value += char;
-      element.dispatchEvent(new Event('input', { bubbles: true }));
+    await this.mouseEmulator.moveToElement(element);
+    await this.wait(this.randomDelay(100, 300));
 
-      const typingDelay = this.randomDelay(50, 200);
-      await this.wait(typingDelay);
-    }
-
-    await this.wait(this.randomDelay(200, 500));
+    await this.keyboardEmulator.typeText(element, text);
   }
 
   private wait(ms: number): Promise<void> {
@@ -151,26 +176,64 @@ export class BrowserAutomation {
   }
 
   async loginToEmail(email: string, password: string): Promise<void> {
-    console.log('Attempting email login...');
+    console.log('Attempting email login with realistic input...');
 
-    await this.wait(3000);
+    await this.wait(this.randomDelay(2000, 4000));
 
-    const emailInput = document.querySelector('input[type="email"], input[name="email"], input[id*="email"]');
+    const emailInput = document.querySelector('input[type="email"], input[name="email"], input[id*="email"], input[name="username"]') as HTMLInputElement;
     if (emailInput) {
-      await this.typeText('input[type="email"], input[name="email"], input[id*="email"]', email);
-      await this.wait(1000);
+      await this.mouseEmulator.moveToElement(emailInput);
+      await this.wait(this.randomDelay(200, 500));
+      await this.keyboardEmulator.typeText(emailInput, email);
+      await this.wait(this.randomDelay(500, 1000));
     }
 
-    const passwordInput = document.querySelector('input[type="password"]');
+    const passwordInput = document.querySelector('input[type="password"]') as HTMLInputElement;
     if (passwordInput) {
-      await this.typeText('input[type="password"]', password);
-      await this.wait(1000);
+      await this.mouseEmulator.moveToElement(passwordInput);
+      await this.wait(this.randomDelay(200, 500));
+      await this.keyboardEmulator.typeText(passwordInput, password);
+      await this.wait(this.randomDelay(800, 1500));
     }
 
-    const loginButton = document.querySelector('button[type="submit"], button[id*="login"], button[class*="login"]');
+    const loginButton = document.querySelector('button[type="submit"], button[id*="login"], button[class*="login"], input[type="submit"]') as HTMLElement;
     if (loginButton) {
-      await this.click('button[type="submit"], button[id*="login"], button[class*="login"]');
+      await this.mouseEmulator.click(loginButton);
     }
+  }
+
+  async performSearch(query: string): Promise<void> {
+    const searchSelectors = [
+      'input[type="search"]',
+      'input[name="q"]',
+      'input[name="search"]',
+      'input[placeholder*="Search"]',
+      'input[aria-label*="Search"]',
+      'textarea[name="q"]',
+    ];
+
+    let searchInput: HTMLInputElement | HTMLTextAreaElement | null = null;
+
+    for (const selector of searchSelectors) {
+      searchInput = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement;
+      if (searchInput) break;
+    }
+
+    if (!searchInput) {
+      console.log('No search input found');
+      return;
+    }
+
+    await this.mouseEmulator.moveToElement(searchInput as HTMLElement);
+    await this.wait(this.randomDelay(300, 700));
+
+    searchInput.focus();
+    await this.wait(this.randomDelay(200, 500));
+
+    await this.keyboardEmulator.typeText(searchInput, query);
+    await this.wait(this.randomDelay(500, 1000));
+
+    await this.keyboardEmulator.pressEnter(searchInput);
   }
 
   getRandomLink(): string | null {

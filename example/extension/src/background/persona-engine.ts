@@ -70,6 +70,11 @@ export interface PersonaBrain {
   interests: string[];
 }
 
+export interface InputSimulationTraits {
+  typingSpeed: 'slow' | 'normal' | 'fast';
+  errorRate: number;
+}
+
 export class PersonaEngine {
   private brain: PersonaBrain | null = null;
   private persona: PersonaData | null = null;
@@ -302,5 +307,34 @@ export class PersonaEngine {
 
   getPersona(): PersonaData | null {
     return this.persona;
+  }
+
+  getInputSimulationTraits(): InputSimulationTraits {
+    if (!this.brain || !this.persona) {
+      return { typingSpeed: 'normal', errorRate: 0.05 };
+    }
+
+    const traits = this.persona.personality_traits.map(t => t.toLowerCase());
+
+    let typingSpeed: 'slow' | 'normal' | 'fast' = 'normal';
+    let errorRate = 0.05;
+
+    if (traits.some(t => t.includes('impatient') || t.includes('quick') || t.includes('energetic'))) {
+      typingSpeed = 'fast';
+      errorRate = 0.08;
+    } else if (traits.some(t => t.includes('patient') || t.includes('careful') || t.includes('meticulous'))) {
+      typingSpeed = 'slow';
+      errorRate = 0.02;
+    }
+
+    if (traits.some(t => t.includes('clumsy') || t.includes('error-prone') || t.includes('distracted'))) {
+      errorRate += 0.05;
+    }
+
+    if (traits.some(t => t.includes('precise') || t.includes('accurate') || t.includes('detail-oriented'))) {
+      errorRate = Math.max(0.01, errorRate - 0.03);
+    }
+
+    return { typingSpeed, errorRate: Math.min(0.15, errorRate) };
   }
 }
