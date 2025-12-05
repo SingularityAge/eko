@@ -156,7 +156,7 @@ export async function init(): Promise<ChatAgent | void> {
   const llmConfig = (await chrome.storage.sync.get([storageKey]))[storageKey];
   if (!llmConfig || !llmConfig.apiKey) {
     printLog(
-      "Please configure apiKey, configure in the eko extension options of the browser extensions.",
+      "Please configure your OpenRouter API key in the extension options.",
       "error"
     );
     setTimeout(() => {
@@ -169,11 +169,11 @@ export async function init(): Promise<ChatAgent | void> {
 
   const llms: LLMs = {
     default: {
-      provider: llmConfig.llm as any,
+      provider: "openrouter",
       model: llmConfig.modelName,
       apiKey: llmConfig.apiKey,
       config: {
-        baseURL: llmConfig.options.baseURL,
+        baseURL: "https://openrouter.ai/api/v1",
       },
     },
   };
