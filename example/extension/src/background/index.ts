@@ -410,6 +410,8 @@ function startSimulationLoop(): void {
     clearInterval(simulationInterval);
   }
 
+  let emailLoginAttempted = false;
+
   simulationInterval = setInterval(async () => {
     if (!isSimulationRunning || !personaEngine) {
       return;
@@ -418,24 +420,71 @@ function startSimulationLoop(): void {
     try {
       const activity = personaEngine.getCurrentActivity();
       const randomSite = personaEngine.getRandomSite();
+      const brain = personaEngine.getBrain();
 
       personaEngine.updateEnergyLevel();
 
       if (activity?.activity === "sleep") {
         printLog("Persona is sleeping", "info");
+        chrome.runtime.sendMessage({
+          type: "simulation_status",
+          data: {
+            status: "sleeping",
+            site: "N/A",
+            activity: activity.activity,
+            energy: brain?.state.energyLevel || 0,
+          },
+        });
+        return;
+      }
+
+      if (activity?.activity.includes("bathroom") || activity?.activity.includes("meal")) {
+        printLog(`Persona is on ${activity.activity}`, "info");
+        chrome.runtime.sendMessage({
+          type: "simulation_status",
+          data: {
+            status: "break",
+            site: "N/A",
+            activity: activity.activity,
+            energy: brain?.state.energyLevel || 0,
+          },
+        });
+        await new Promise(resolve => setTimeout(resolve, 5 * 60 * 1000));
         return;
       }
 
       if (personaEngine.shouldTakeBreak()) {
-        printLog("Persona is taking a break", "info");
+        printLog("Persona is taking a break due to low energy", "info");
+        await new Promise(resolve => setTimeout(resolve, 3 * 60 * 1000));
         return;
       }
 
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!emailLoginAttempted && brain?.email.credentials.pass) {
+        emailLoginAttempted = true;
+        await attemptEmailLogin();
+      }
 
-      if (tabs.length === 0 || Math.random() < 0.3) {
-        const newTab = await chrome.tabs.create({ url: randomSite });
-        printLog(`Navigating to ${randomSite}`, "info");
+      const tabs = await chrome.tabs.query({ currentWindow: true });
+
+      if (tabs.length < 3 || Math.random() < 0.3) {
+        const newTab = await chrome.tabs.create({ url: randomSite, active: false });
+        printLog(`Opening ${randomSite}`, "info");
+
+        if (newTab.id) {
+          setTimeout(async () => {
+            try {
+              await chrome.tabs.sendMessage(newTab.id!, {
+                type: "startBrowsing",
+                data: {
+                  activity: activity?.activity,
+                  duration: Math.random() * 50000 + 10000,
+                },
+              });
+            } catch (e) {
+              console.log("Content script not ready yet");
+            }
+          }, 2000);
+        }
 
         chrome.runtime.sendMessage({
           type: "simulation_status",
@@ -443,14 +492,63 @@ function startSimulationLoop(): void {
             status: "browsing",
             site: randomSite,
             activity: activity?.activity,
-            energy: personaEngine.getBrain()?.state.energyLevel,
+            energy: brain?.state.energyLevel || 0,
           },
         });
+      }
+
+      if (Math.random() < 0.2 && tabs.length > 0) {
+        const randomTab = tabs[Math.floor(Math.random() * tabs.length)];
+        if (randomTab.id) {
+          try {
+            const response = await chrome.tabs.sendMessage(randomTab.id, {
+              type: "checkDistraction",
+            });
+
+            if (response?.url) {
+              await chrome.tabs.create({ url: response.url, active: false });
+              printLog(`Got distracted, opening ${response.url}`, "info");
+            }
+          } catch (e) {
+            console.log("Tab not responding to distraction check");
+          }
+        }
       }
     } catch (error) {
       console.error("Simulation loop error:", error);
     }
   }, Math.random() * 4000 + 1000);
+}
+
+async function attemptEmailLogin(): Promise<void> {
+  if (!personaEngine) return;
+
+  const brain = personaEngine.getBrain();
+  if (!brain?.email.credentials.pass) return;
+
+  printLog("Attempting to log into ProtonMail", "info");
+
+  const emailTab = await chrome.tabs.create({
+    url: "https://account.proton.me/login",
+    active: false,
+  });
+
+  if (emailTab.id) {
+    setTimeout(async () => {
+      try {
+        await chrome.tabs.sendMessage(emailTab.id!, {
+          type: "loginEmail",
+          data: {
+            email: brain.email.address,
+            password: brain.email.credentials.pass,
+          },
+        });
+        printLog("Email login attempted", "success");
+      } catch (e) {
+        console.log("Email login failed:", e);
+      }
+    }, 5000);
+  }
 }
 
 // Get simulation status
