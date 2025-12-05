@@ -23,6 +23,13 @@ export interface PersonaTechSetup {
   os: string;
 }
 
+export interface VerificationPattern {
+  domain: string;
+  type: 'code' | 'link';
+  codePattern?: RegExp | string;
+  linkPattern?: RegExp | string;
+}
+
 export interface PersonaData {
   demographics: PersonaDemographics;
   email: string;
@@ -34,6 +41,8 @@ export interface PersonaData {
   credentials?: {
     email_password?: string;
   };
+  verification_patterns?: VerificationPattern[];
+  signup_mode?: boolean;
 }
 
 export interface ScheduleEvent {
@@ -65,9 +74,11 @@ export interface PersonaBrain {
     currentTime: Date;
     energyLevel: number;
     timezone: string;
+    signupMode: boolean;
   };
   personality: string[];
   interests: string[];
+  verificationPatterns: VerificationPattern[];
 }
 
 export interface InputSimulationTraits {
@@ -91,6 +102,20 @@ export class PersonaEngine {
     const schedule = this.parseSchedule(persona.schedule, persona.interests, persona.browsing_habits);
     const habits = this.parseHabits(persona.browsing_habits);
 
+    const defaultVerificationPatterns: VerificationPattern[] = [
+      { domain: 'github.com', type: 'code', codePattern: /\b\d{6}\b/ },
+      { domain: 'google.com', type: 'code', codePattern: /\b\d{6}\b/ },
+      { domain: 'discord.com', type: 'link', linkPattern: /verify|confirm/ },
+      { domain: 'twitter.com', type: 'code', codePattern: /\b\d{6}\b/ },
+      { domain: 'reddit.com', type: 'link', linkPattern: /verify|confirm/ },
+    ];
+
+    const signupMode = persona.signup_mode || schedule.some(event =>
+      event.activity.toLowerCase().includes('try new') ||
+      event.activity.toLowerCase().includes('signup') ||
+      event.activity.toLowerCase().includes('register')
+    );
+
     return {
       schedule,
       habits,
@@ -105,9 +130,11 @@ export class PersonaEngine {
         currentTime: new Date(),
         energyLevel: 100,
         timezone: this.inferTimezone(persona.demographics.location),
+        signupMode,
       },
       personality: persona.personality_traits,
       interests: persona.interests,
+      verificationPatterns: persona.verification_patterns || defaultVerificationPatterns,
     };
   }
 

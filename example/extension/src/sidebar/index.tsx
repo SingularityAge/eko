@@ -52,6 +52,7 @@ const AppRun = () => {
   const [darkMode, setDarkMode] = useState(true);
   const [emailPassword, setEmailPassword] = useState("");
   const [simulationStatus, setSimulationStatus] = useState<SimulationStatus | null>(null);
+  const [emailAutoVerifyEnabled, setEmailAutoVerifyEnabled] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -66,8 +67,9 @@ const AppRun = () => {
       }
     }
 
-    chrome.storage.local.get(["isSimulationRunning"], (result) => {
+    chrome.storage.local.get(["isSimulationRunning", "emailAutoVerifyEnabled"], (result) => {
       setIsPlaying(result.isSimulationRunning || false);
+      setEmailAutoVerifyEnabled(result.emailAutoVerifyEnabled || false);
     });
   }, []);
 
@@ -369,7 +371,51 @@ Output ONLY valid JSON, no markdown or explanation.`
       {renderPersonaPreview()}
 
       <Card
-        title="3. Control Simulation"
+        title="Email Auto-Verify"
+        style={{ marginTop: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <Text strong style={{ color: darkMode ? "#ffffff" : "#000000" }}>
+                Enable Email Auto-Verify
+              </Text>
+              <br />
+              <Text style={{ fontSize: 12, color: "#888" }}>
+                Automatically detect signups and fill verification codes
+              </Text>
+            </div>
+            <Switch
+              checked={emailAutoVerifyEnabled}
+              onChange={(checked) => {
+                setEmailAutoVerifyEnabled(checked);
+                chrome.runtime.sendMessage({
+                  type: "enableEmailAutoVerify",
+                  data: {
+                    enabled: checked,
+                    email: persona?.email,
+                    password: emailPassword,
+                  },
+                });
+              }}
+              disabled={!persona}
+            />
+          </div>
+          {emailAutoVerifyEnabled && (
+            <div style={{ marginTop: 12, padding: 12, backgroundColor: darkMode ? "#1a1a1a" : "#f5f5f5", borderRadius: 6 }}>
+              <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666" }}>
+                ✓ Will monitor for signup forms<br />
+                ✓ Poll ProtonMail inbox every 10s<br />
+                ✓ Auto-extract verification codes/links<br />
+                ✓ Fill codes with realistic typing
+              </Text>
+            </div>
+          )}
+        </Space>
+      </Card>
+
+      <Card
+        title="Control Simulation"
         style={{ marginTop: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
       >
         <Space direction="vertical" style={{ width: "100%" }}>

@@ -17,12 +17,14 @@ import { initAgentServices } from "./agent";
 import WriteFileAgent from "./agent/file-agent";
 import { BrowserAgent } from "@eko-ai/eko-extension";
 import { PersonaEngine, PersonaData } from "./persona-engine";
+import { EmailVerifier } from "./email-verifier";
 
 var chatAgent: ChatAgent | null = null;
 const humanCallbackIdMap = new Map<string, Function>();
 const abortControllers = new Map<string, AbortController>();
 
 let personaEngine: PersonaEngine | null = null;
+let emailVerifier: EmailVerifier | null = null;
 let simulationInterval: number | null = null;
 let isSimulationRunning = false;
 
@@ -550,6 +552,95 @@ async function initializePersonaTraits(): Promise<void> {
   }
 }
 
+async function handleSignupSubmitted(requestId: string, data: any): Promise<void> {
+  const { domain } = data;
+
+  if (!emailVerifier) {
+    emailVerifier = new EmailVerifier();
+  }
+
+  if (!personaEngine) return;
+
+  const brain = personaEngine.getBrain();
+  if (!brain?.state.signupMode) {
+    console.log('Signup mode not enabled');
+    return;
+  }
+
+  printLog(`Signup detected for ${domain}, starting email verification polling`, "info");
+
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const signupTab = tabs[0];
+
+  emailVerifier.startPolling(domain, async (result) => {
+    printLog(`Verification ${result.type} found: ${result.value}`, "success");
+
+    if (result.type === 'code') {
+      if (signupTab && signupTab.id) {
+        await chrome.tabs.update(signupTab.id, { active: true });
+
+        setTimeout(async () => {
+          await chrome.tabs.sendMessage(signupTab.id!, {
+            type: 'fillVerificationCode',
+            data: { code: result.value },
+          });
+
+          printLog(`Verification code filled automatically`, "success");
+        }, 1500);
+      }
+    } else {
+      if (signupTab && signupTab.id) {
+        setTimeout(async () => {
+          await chrome.tabs.update(signupTab.id!, { url: result.value });
+          printLog(`Verification link clicked`, "success");
+        }, 1500);
+      }
+    }
+  });
+}
+
+async function handleVerificationPageDetected(requestId: string, data: any): Promise<void> {
+  const { domain } = data;
+
+  if (!emailVerifier) {
+    emailVerifier = new EmailVerifier();
+  }
+
+  printLog(`Verification page detected for ${domain}`, "info");
+
+  emailVerifier.startPolling(domain, async (result) => {
+    if (result.type === 'code') {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const verificationTab = tabs[0];
+
+      if (verificationTab && verificationTab.id) {
+        setTimeout(async () => {
+          await chrome.tabs.sendMessage(verificationTab.id!, {
+            type: 'fillVerificationCode',
+            data: { code: result.value },
+          });
+
+          printLog(`Verification code auto-filled`, "success");
+        }, 1500);
+      }
+    }
+  });
+}
+
+async function handleEnableEmailAutoVerify(requestId: string, data: any): Promise<void> {
+  const { enabled, email, password } = data;
+
+  await chrome.storage.local.set({
+    emailAutoVerifyEnabled: enabled,
+    emailCredentials: {
+      email: email || '',
+      password: password || '',
+    },
+  });
+
+  printLog(`Email auto-verify ${enabled ? 'enabled' : 'disabled'}`, "success");
+}
+
 async function attemptEmailLogin(): Promise<void> {
   if (!personaEngine) return;
 
@@ -628,6 +719,9 @@ const eventHandlers: Record<
   startSimulation: handleStartSimulation,
   pauseSimulation: handlePauseSimulation,
   getSimulationStatus: handleGetSimulationStatus,
+  signupSubmitted: handleSignupSubmitted,
+  verificationPageDetected: handleVerificationPageDetected,
+  enableEmailAutoVerify: handleEnableEmailAutoVerify,
 };
 
 // Message listener
