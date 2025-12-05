@@ -3,17 +3,33 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>Eko Sidebar</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browseless</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="js/vendor.js"></script>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     ::-webkit-scrollbar {
-      width: 5px;
-      height: 5px;
-      background-color: #fff;
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
     }
 
     ::-webkit-scrollbar-thumb {
-      background-color: #c1c1c1;
+      background-color: rgba(180, 170, 158, 0.5);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(180, 170, 158, 0.8);
     }
   </style>
 </head>

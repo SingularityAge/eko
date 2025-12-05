@@ -1,11 +1,129 @@
 import "./index.css";
 import { createRoot } from "react-dom/client";
-import { Button, Input, Card, Switch, message as AntdMessage, Space, Typography } from "antd";
-import { PlayCircleOutlined, PauseCircleOutlined, DownloadOutlined, UploadOutlined } from "@ant-design/icons";
+import { message as AntdMessage } from "antd";
 import React, { useState, useRef, useEffect } from "react";
 
-const { TextArea } = Input;
-const { Title, Text, Paragraph } = Typography;
+// SVG Icons as React components
+const LogoIcon = () => (
+  <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="32" height="32" rx="8" fill="url(#logoGradient)"/>
+    <path d="M8 16C8 11.5817 11.5817 8 16 8C20.4183 8 24 11.5817 24 16" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+    <path d="M12 16C12 13.7909 13.7909 12 16 12C18.2091 12 20 13.7909 20 16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+    <circle cx="16" cy="16" r="2" fill="white"/>
+    <path d="M16 18V24" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+    <defs>
+      <linearGradient id="logoGradient" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+        <stop stopColor="#DA7756"/>
+        <stop offset="1" stopColor="#C56747"/>
+      </linearGradient>
+    </defs>
+  </svg>
+);
+
+const SettingsIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+);
+
+const PlayIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 5v14l11-7z"/>
+  </svg>
+);
+
+const PauseIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+  </svg>
+);
+
+const StopIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M6 6h12v12H6z"/>
+  </svg>
+);
+
+const SendIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="22" y1="2" x2="11" y2="13"/>
+    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+  </svg>
+);
+
+const DownloadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="7 10 12 15 17 10"/>
+    <line x1="12" y1="15" x2="12" y2="3"/>
+  </svg>
+);
+
+const UploadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="17 8 12 3 7 8"/>
+    <line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+);
+
+const UserIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+    <circle cx="12" cy="7" r="4"/>
+  </svg>
+);
+
+const MailIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+    <polyline points="22,6 12,13 2,6"/>
+  </svg>
+);
+
+const ClockIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <polyline points="12 6 12 12 16 14"/>
+  </svg>
+);
+
+const HeartIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+  </svg>
+);
+
+const GlobeIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="2" y1="12" x2="22" y2="12"/>
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+  </svg>
+);
+
+const LockIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+  </svg>
+);
+
+const AlertIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="12" y1="8" x2="12" y2="12"/>
+    <line x1="12" y1="16" x2="12.01" y2="16"/>
+  </svg>
+);
+
+const SparklesIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3L13.5 8.5L19 10L13.5 11.5L12 17L10.5 11.5L5 10L10.5 8.5L12 3Z"/>
+    <path d="M19 15L20 18L23 19L20 20L19 23L18 20L15 19L18 18L19 15Z"/>
+  </svg>
+);
 
 interface Persona {
   demographics: {
@@ -44,15 +162,17 @@ interface SimulationStatus {
   energy: number;
 }
 
-const AppRun = () => {
+type SimulationState = "idle" | "running" | "paused";
+
+const Browseless = () => {
   const [personaDescription, setPersonaDescription] = useState("");
   const [persona, setPersona] = useState<Persona | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [darkMode, setDarkMode] = useState(true);
+  const [simulationState, setSimulationState] = useState<SimulationState>("idle");
   const [emailPassword, setEmailPassword] = useState("");
   const [simulationStatus, setSimulationStatus] = useState<SimulationStatus | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const savedPersona = localStorage.getItem("persona");
@@ -67,7 +187,7 @@ const AppRun = () => {
     }
 
     chrome.storage.local.get(["isSimulationRunning"], (result) => {
-      setIsPlaying(result.isSimulationRunning || false);
+      setSimulationState(result.isSimulationRunning ? "running" : "idle");
     });
   }, []);
 
@@ -96,7 +216,7 @@ const AppRun = () => {
 
   const generatePersona = async () => {
     if (!personaDescription.trim()) {
-      AntdMessage.warning("Please enter a persona description");
+      AntdMessage.warning("Please describe the persona you want to create");
       return;
     }
 
@@ -106,7 +226,7 @@ const AppRun = () => {
       const llmConfig = config.llmConfig;
 
       if (!llmConfig || !llmConfig.apiKey) {
-        AntdMessage.error("Please configure your OpenRouter API key in settings");
+        AntdMessage.error("Please configure your API key in settings");
         chrome.runtime.openOptionsPage();
         return;
       }
@@ -118,7 +238,7 @@ const AppRun = () => {
           "Authorization": `Bearer ${llmConfig.apiKey}`,
         },
         body: JSON.stringify({
-          model: llmConfig.modelName || "anthropic/claude-sonnet-4.5",
+          model: llmConfig.plannerModel || llmConfig.chatModel || "anthropic/claude-sonnet-4.5",
           messages: [
             {
               role: "user",
@@ -151,10 +271,11 @@ Output ONLY valid JSON, no markdown or explanation.`
 
       setPersona(personaData);
       localStorage.setItem("persona", JSON.stringify(personaData));
-      AntdMessage.success("Persona generated successfully!");
+      setPersonaDescription("");
+      AntdMessage.success("Persona created successfully!");
     } catch (error) {
       console.error("Error generating persona:", error);
-      AntdMessage.error("Failed to generate persona: " + error);
+      AntdMessage.error("Failed to generate persona");
     } finally {
       setGenerating(false);
     }
@@ -162,16 +283,15 @@ Output ONLY valid JSON, no markdown or explanation.`
 
   const downloadPersona = () => {
     if (!persona) return;
-
     const dataStr = JSON.stringify(persona, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `persona_${Date.now()}.json`;
+    link.download = `browseless_persona_${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
-    AntdMessage.success("Persona downloaded!");
+    AntdMessage.success("Persona downloaded");
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,17 +304,18 @@ Output ONLY valid JSON, no markdown or explanation.`
         const personaData = JSON.parse(e.target?.result as string);
         setPersona(personaData);
         localStorage.setItem("persona", JSON.stringify(personaData));
-        AntdMessage.success("Persona uploaded successfully!");
+        AntdMessage.success("Persona uploaded successfully");
       } catch (error) {
         AntdMessage.error("Invalid persona file");
       }
     };
     reader.readAsText(file);
+    event.target.value = "";
   };
 
   const handlePlay = async () => {
     if (!persona) {
-      AntdMessage.warning("Please generate or upload a persona first");
+      AntdMessage.warning("Create or upload a persona first");
       return;
     }
 
@@ -211,10 +332,10 @@ Output ONLY valid JSON, no markdown or explanation.`
         type: "startSimulation",
         data: { persona: personaWithCreds },
       });
-      setIsPlaying(true);
+      setSimulationState("running");
       localStorage.setItem("persona", JSON.stringify(personaWithCreds));
     } catch (error) {
-      AntdMessage.error("Failed to start simulation: " + error);
+      AntdMessage.error("Failed to start simulation");
     }
   };
 
@@ -224,240 +345,284 @@ Output ONLY valid JSON, no markdown or explanation.`
       type: "pauseSimulation",
       data: {},
     });
-    setIsPlaying(false);
+    setSimulationState("paused");
+  };
+
+  const handleStop = () => {
+    chrome.runtime.sendMessage({
+      requestId: Date.now().toString(),
+      type: "pauseSimulation",
+      data: {},
+    });
+    setSimulationState("idle");
     setSimulationStatus(null);
   };
 
-  const renderPersonaPreview = () => {
-    if (!persona) return null;
-
-    return (
-      <Card title="Persona Preview" style={{ marginTop: 16 }}>
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <div>
-            <Text strong>Demographics: </Text>
-            <Text>
-              {persona.demographics.age}y/o {persona.demographics.gender} from{" "}
-              {persona.demographics.location}
-            </Text>
-          </div>
-          <div>
-            <Text strong>Email: </Text>
-            <Text>{persona.email}</Text>
-          </div>
-          <div>
-            <Text strong>Schedule: </Text>
-            <Text>
-              Wakes at {persona.schedule.wake_time}, sleeps at {persona.schedule.sleep_time}
-            </Text>
-          </div>
-          <div>
-            <Text strong>Interests: </Text>
-            <Text>{persona.interests.join(", ")}</Text>
-          </div>
-          <div>
-            <Text strong>Personality: </Text>
-            <Text>{persona.personality_traits.join(", ")}</Text>
-          </div>
-          <div>
-            <Text strong>Tech: </Text>
-            <Text>
-              {persona.tech_setup.laptop_model} ({persona.tech_setup.os})
-            </Text>
-          </div>
-          <div>
-            <Text strong>Favorite Sites: </Text>
-            <Text>{persona.browsing_habits.favorite_sites.slice(0, 3).join(", ")}</Text>
-          </div>
-        </Space>
-      </Card>
-    );
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      generatePersona();
+    }
   };
 
+  const openSettings = () => {
+    chrome.runtime.openOptionsPage();
+  };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        backgroundColor: darkMode ? "#1a1a1a" : "#ffffff",
-        color: darkMode ? "#ffffff" : "#000000",
-        padding: "20px",
-        overflowY: "auto",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <Title level={2} style={{ margin: 0, color: darkMode ? "#ffffff" : "#000000" }}>
-          PersonaSurfer
-        </Title>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Text style={{ color: darkMode ? "#ffffff" : "#000000" }}>Dark Mode</Text>
-          <Switch checked={darkMode} onChange={setDarkMode} />
+    <div className="browseless-container">
+      {/* Header */}
+      <header className="browseless-header">
+        <div className="browseless-logo">
+          <div className="browseless-logo-icon">
+            <LogoIcon />
+          </div>
+          <span className="browseless-logo-text">Browseless</span>
+        </div>
+        <div className="browseless-header-actions">
+          <button className="header-btn" onClick={openSettings} title="Settings">
+            <SettingsIcon />
+          </button>
+        </div>
+      </header>
+
+      {/* Content */}
+      <div className="browseless-content">
+        <div className="messages-container">
+          {/* Empty State or Persona Card */}
+          {!persona ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <SparklesIcon />
+              </div>
+              <h2 className="empty-state-title">Create a Persona</h2>
+              <p className="empty-state-description">
+                Describe who you want to simulate browsing the web. Be as detailed as you like.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Persona Card */}
+              <div className="persona-card">
+                <div className="persona-card-header">
+                  <span className="persona-card-title">Active Persona</span>
+                  <div className="persona-card-actions">
+                    <button className="icon-btn-sm" onClick={downloadPersona} title="Download">
+                      <DownloadIcon />
+                    </button>
+                    <button className="icon-btn-sm" onClick={() => fileInputRef.current?.click()} title="Upload">
+                      <UploadIcon />
+                    </button>
+                  </div>
+                </div>
+                <div className="persona-card-body">
+                  <div className="persona-info-grid">
+                    <div className="persona-info-item">
+                      <UserIcon />
+                      <div className="persona-info-content">
+                        <div className="persona-info-label">Demographics</div>
+                        <div className="persona-info-value">
+                          {persona.demographics.age}y/o {persona.demographics.gender}, {persona.demographics.location}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="persona-info-item">
+                      <MailIcon />
+                      <div className="persona-info-content">
+                        <div className="persona-info-label">Email</div>
+                        <div className="persona-info-value">{persona.email}</div>
+                      </div>
+                    </div>
+
+                    <div className="persona-info-item">
+                      <ClockIcon />
+                      <div className="persona-info-content">
+                        <div className="persona-info-label">Schedule</div>
+                        <div className="persona-info-value">
+                          {persona.schedule.wake_time} - {persona.schedule.sleep_time}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="persona-info-item">
+                      <HeartIcon />
+                      <div className="persona-info-content">
+                        <div className="persona-info-label">Interests</div>
+                        <div className="tag-list">
+                          {persona.interests.slice(0, 4).map((interest, i) => (
+                            <span key={i} className="tag">{interest}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="persona-info-item">
+                      <GlobeIcon />
+                      <div className="persona-info-content">
+                        <div className="persona-info-label">Favorite Sites</div>
+                        <div className="persona-info-value">
+                          {persona.browsing_habits.favorite_sites.slice(0, 3).join(", ")}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Credential Input */}
+                  <div className="credential-input-group">
+                    <label className="credential-label">
+                      <LockIcon />
+                      Email Password (Optional)
+                    </label>
+                    <input
+                      type="password"
+                      className="credential-input"
+                      placeholder="For email simulation"
+                      value={emailPassword}
+                      onChange={(e) => setEmailPassword(e.target.value)}
+                    />
+                    <div className="credential-note">
+                      <AlertIcon />
+                      Stored locally only
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Card (when running) */}
+              {simulationState !== "idle" && simulationStatus && (
+                <div className="status-card">
+                  <div className="status-card-header">
+                    <div className={`status-indicator ${simulationState === "paused" ? "paused" : ""}`} />
+                    <span className="status-title">
+                      {simulationState === "running" ? "Simulation Running" : "Simulation Paused"}
+                    </span>
+                  </div>
+                  <div className="status-grid">
+                    <div className="status-item">
+                      <div className="status-label">Status</div>
+                      <div className="status-value success">{simulationStatus.status}</div>
+                    </div>
+                    <div className="status-item">
+                      <div className="status-label">Energy</div>
+                      <div className={`status-value ${
+                        simulationStatus.energy > 50 ? "success" :
+                        simulationStatus.energy > 30 ? "warning" : "error"
+                      }`}>
+                        {simulationStatus.energy.toFixed(0)}%
+                      </div>
+                    </div>
+                    <div className="status-item">
+                      <div className="status-label">Activity</div>
+                      <div className="status-value">{simulationStatus.activity}</div>
+                    </div>
+                    <div className="status-item">
+                      <div className="status-label">Current Site</div>
+                      <div className="status-value">{simulationStatus.site}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          className="file-input-hidden"
+          onChange={handleFileUpload}
+        />
+
+        {/* Input Area - 27% height with controls inside */}
+        <div className="input-container">
+          <div className="input-wrapper">
+            <textarea
+              ref={textareaRef}
+              className="prompt-textarea"
+              placeholder="Describe a persona to create... (e.g., 25-year-old software developer who loves gaming and coffee)"
+              value={personaDescription}
+              onChange={(e) => setPersonaDescription(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={generating}
+            />
+            <div className="input-controls">
+              {/* Play/Pause/Stop buttons */}
+              {simulationState === "idle" && (
+                <button
+                  className="control-btn play"
+                  onClick={handlePlay}
+                  disabled={!persona}
+                  title="Start Simulation"
+                >
+                  <PlayIcon />
+                </button>
+              )}
+
+              {simulationState === "running" && (
+                <>
+                  <button
+                    className="control-btn pause"
+                    onClick={handlePause}
+                    title="Pause Simulation"
+                  >
+                    <PauseIcon />
+                  </button>
+                  <button
+                    className="control-btn stop"
+                    onClick={handleStop}
+                    title="Stop Simulation"
+                  >
+                    <StopIcon />
+                  </button>
+                </>
+              )}
+
+              {simulationState === "paused" && (
+                <>
+                  <button
+                    className="control-btn play"
+                    onClick={handlePlay}
+                    title="Resume Simulation"
+                  >
+                    <PlayIcon />
+                  </button>
+                  <button
+                    className="control-btn stop"
+                    onClick={handleStop}
+                    title="Stop Simulation"
+                  >
+                    <StopIcon />
+                  </button>
+                </>
+              )}
+
+              {/* Generate/Send button */}
+              <button
+                className="control-btn send"
+                onClick={generatePersona}
+                disabled={!personaDescription.trim() || generating}
+                title="Generate Persona"
+              >
+                {generating ? (
+                  <div className="loading-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                ) : (
+                  <>
+                    <SendIcon />
+                    <span>Generate</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-
-      <Card
-        title="1. Describe Your Persona"
-        style={{ marginBottom: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
-      >
-        <TextArea
-          rows={4}
-          placeholder="e.g., 20-year-old college student into gaming and memes"
-          value={personaDescription}
-          onChange={(e) => setPersonaDescription(e.target.value)}
-          style={{ marginBottom: 12 }}
-        />
-        <Button
-          type="primary"
-          onClick={generatePersona}
-          loading={generating}
-          block
-          size="large"
-        >
-          Generate Persona
-        </Button>
-      </Card>
-
-      <Card
-        title="2. Manage Persona"
-        style={{ marginBottom: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
-      >
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <Space style={{ width: "100%" }}>
-            <Button
-              icon={<DownloadOutlined />}
-              onClick={downloadPersona}
-              disabled={!persona}
-            >
-              Download
-            </Button>
-            <Button
-              icon={<UploadOutlined />}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Upload
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              style={{ display: "none" }}
-              onChange={handleFileUpload}
-            />
-          </Space>
-
-          {persona && (
-            <div style={{ width: "100%", marginTop: 12 }}>
-              <Text strong style={{ display: "block", marginBottom: 8 }}>
-                Email Credentials (Optional)
-              </Text>
-              <Input.Password
-                placeholder="Email password for simulation"
-                value={emailPassword}
-                onChange={(e) => setEmailPassword(e.target.value)}
-                style={{ marginBottom: 4 }}
-              />
-              <Text style={{ fontSize: 12, color: "#888" }}>
-                ⚠️ Stored locally only. Used for simulation purposes.
-              </Text>
-            </div>
-          )}
-        </Space>
-      </Card>
-
-      {renderPersonaPreview()}
-
-      <Card
-        title="3. Control Simulation"
-        style={{ marginTop: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
-      >
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <Space style={{ width: "100%" }}>
-            {!isPlaying ? (
-              <Button
-                type="primary"
-                icon={<PlayCircleOutlined />}
-                onClick={handlePlay}
-                disabled={!persona}
-                size="large"
-              >
-                Play
-              </Button>
-            ) : (
-              <Button
-                danger
-                icon={<PauseCircleOutlined />}
-                onClick={handlePause}
-                size="large"
-              >
-                Pause
-              </Button>
-            )}
-          </Space>
-
-          {!persona && (
-            <Paragraph style={{ marginTop: 12, color: "#999" }}>
-              Generate or upload a persona to start simulation
-            </Paragraph>
-          )}
-
-          {simulationStatus && isPlaying && (
-            <Card
-              size="small"
-              style={{
-                marginTop: 12,
-                backgroundColor: darkMode ? "#333" : "#f0f0f0",
-                borderColor: "#52c41a",
-              }}
-            >
-              <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                <div>
-                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
-                    Status:{" "}
-                  </Text>
-                  <Text style={{ color: "#52c41a" }}>
-                    {simulationStatus.status}
-                  </Text>
-                </div>
-                <div>
-                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
-                    Browsing:{" "}
-                  </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>
-                    {simulationStatus.site}
-                  </Text>
-                </div>
-                <div>
-                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
-                    Activity:{" "}
-                  </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>
-                    {simulationStatus.activity}
-                  </Text>
-                </div>
-                <div>
-                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
-                    Energy:{" "}
-                  </Text>
-                  <Text
-                    style={{
-                      color:
-                        simulationStatus.energy > 50
-                          ? "#52c41a"
-                          : simulationStatus.energy > 30
-                          ? "#faad14"
-                          : "#f5222d",
-                    }}
-                  >
-                    {simulationStatus.energy.toFixed(0)}%
-                  </Text>
-                </div>
-              </Space>
-            </Card>
-          )}
-        </Space>
-      </Card>
     </div>
   );
 };
@@ -466,6 +631,6 @@ const root = createRoot(document.getElementById("root")!);
 
 root.render(
   <React.StrictMode>
-    <AppRun />
+    <Browseless />
   </React.StrictMode>
 );

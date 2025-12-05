@@ -1,6 +1,6 @@
 {
-  "name": "PersonaSurfer",
-  "description": "Realistic persona-based web surfing simulator",
+  "name": "Browseless",
+  "description": "AI-powered browser automation assistant",
   "version": "1.0.0",
   "manifest_version": 3,
   "background": {
@@ -8,9 +8,9 @@
     "service_worker": "js/background.js"
   },
   "icons": {
-    "16": "icon.ico",
-    "48": "icon.ico",
-    "128": "icon.ico"
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "side_panel": {
     "default_path": "sidebar.html",

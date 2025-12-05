@@ -1,0 +1,49 @@
+/**
+ * Icon generator for Browseless extension
+ * Generates PNG icons from SVG using sharp
+ */
+
+const fs = require('fs');
+const path = require('path');
+const sharp = require('sharp');
+
+// SVG icon template with Browseless logo
+const createSvgIcon = (size) => `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="6" fill="url(#gradient)"/>
+  <path d="M8 16C8 11.5817 11.5817 8 16 8C20.4183 8 24 11.5817 24 16" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M12 16C12 13.7909 13.7909 12 16 12C18.2091 12 20 13.7909 20 16" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="16" cy="16" r="2" fill="white"/>
+  <path d="M16 18V24" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="gradient" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DA7756"/>
+      <stop offset="1" stop-color="#C56747"/>
+    </linearGradient>
+  </defs>
+</svg>`;
+
+const sizes = [16, 48, 128];
+const iconsDir = path.join(__dirname, '../public/icons');
+
+// Ensure icons directory exists
+if (!fs.existsSync(iconsDir)) {
+  fs.mkdirSync(iconsDir, { recursive: true });
+}
+
+async function generateIcons() {
+  for (const size of sizes) {
+    const svgContent = Buffer.from(createSvgIcon(size));
+    const pngPath = path.join(iconsDir, `icon${size}.png`);
+
+    await sharp(svgContent)
+      .resize(size, size)
+      .png()
+      .toFile(pngPath);
+
+    console.log(`Created ${pngPath}`);
+  }
+  console.log('\nAll icons generated successfully!');
+}
+
+generateIcons().catch(console.error);
