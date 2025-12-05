@@ -1,7 +1,7 @@
 {
-  "name": "Eko agent",
-  "description": "Eko Agent Extension",
-  "version": "4.0",
+  "name": "PersonaSurfer",
+  "description": "Realistic persona-based web surfing simulator",
+  "version": "1.0.0",
   "manifest_version": 3,
   "background": {
     "type": "module",

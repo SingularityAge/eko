@@ -1,211 +1,216 @@
 import "./index.css";
-import { uuidv4 } from "@eko-ai/eko";
 import { createRoot } from "react-dom/client";
-import { ChatInput } from "./components/ChatInput";
-import { Empty, message as AntdMessage, Button, Tooltip } from "antd";
-import { ClearOutlined } from "@ant-design/icons";
-import { useFileUpload } from "./hooks/useFileUpload";
-import { MessageItem } from "./components/MessageItem";
-import type { ChatMessage, UploadedFile } from "./types";
-import { useChatCallbacks } from "./hooks/useChatCallbacks";
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Button, Input, Card, Switch, message as AntdMessage, Space, Typography } from "antd";
+import { PlayCircleOutlined, PauseCircleOutlined, DownloadOutlined, UploadOutlined } from "@ant-design/icons";
+import React, { useState, useRef, useEffect } from "react";
+
+const { TextArea } = Input;
+const { Title, Text, Paragraph } = Typography;
+
+interface Persona {
+  demographics: {
+    age: number;
+    gender: string;
+    location: string;
+  };
+  email: string;
+  schedule: {
+    wake_time: string;
+    sleep_time: string;
+    work_hours?: string;
+    meals: string[];
+    bathroom_breaks: number;
+  };
+  interests: string[];
+  browsing_habits: {
+    favorite_sites: string[];
+    session_length_minutes: number;
+    search_patterns: string[];
+  };
+  personality_traits: string[];
+  tech_setup: {
+    laptop_model: string;
+    os: string;
+  };
+}
 
 const AppRun = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputValue, setInputValue] = useState("");
-  const [sending, setSending] = useState(false);
-  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-
-  const { handleChatCallback, handleTaskCallback } = useChatCallbacks(
-    setMessages,
-    currentMessageId,
-    setCurrentMessageId
-  );
-  const { fileToBase64, uploadFile } = useFileUpload();
-
-  // Scroll to bottom
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+  const [personaDescription, setPersonaDescription] = useState("");
+  const [persona, setPersona] = useState<Persona | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
-
-  // Listen to background messages
-  useEffect(() => {
-    const handleMessage = (
-      message: any,
-      sender: chrome.runtime.MessageSender,
-      sendResponse: (response?: any) => void
-    ) => {
-      if (message.type === "chat_callback") {
-        handleChatCallback(message.data);
-      } else if (message.type === "task_callback") {
-        handleTaskCallback(message.data);
-      } else if (message.type === "chat_result") {
-        const messageId = message.data.messageId;
-        const error = message.data.error;
-        if (error && messageId === currentMessageId) {
-          setCurrentMessageId(null);
-          const userMessage = messages.find((m) => m.id === messageId);
-          if (userMessage) {
-            userMessage.status = "error";
-          }
-        }
-      } else if (message.type === "log") {
-        const level = message.data.level;
-        const msg = message.data.message;
-        const showMessage =
-          level === "error"
-            ? AntdMessage.error
-            : level === "success"
-            ? AntdMessage.success
-            : AntdMessage.info;
-        showMessage(msg, 3);
-      }
-    };
-
-    chrome.runtime.onMessage.addListener(handleMessage);
-    return () => {
-      chrome.runtime.onMessage.removeListener(handleMessage);
-    };
-  }, [handleChatCallback, handleTaskCallback, currentMessageId]);
-
-  // Send message
-  const sendMessage = useCallback(async () => {
-    if ((!inputValue.trim() && uploadedFiles.length === 0) || sending) return;
-
-    const messageId = uuidv4();
-
-    // Upload files
-    const fileParts: Array<{
-      type: "file";
-      fileId: string;
-      filename?: string;
-      mimeType: string;
-      data: string;
-    }> = [];
-    for (const file of uploadedFiles) {
+    const savedPersona = localStorage.getItem("persona");
+    if (savedPersona) {
       try {
-        const { fileId, url } = await uploadFile(file);
-        file.fileId = fileId;
-        file.url = url;
-        fileParts.push({
-          type: "file",
-          fileId,
-          filename: file.filename,
-          mimeType: file.mimeType,
-          data: url.startsWith("http") ? url : file.base64Data,
-        });
-      } catch (error) {
-        console.error("Error uploading file:", error);
+        setPersona(JSON.parse(savedPersona));
+      } catch (e) {
+        console.error("Failed to load persona", e);
       }
     }
+  }, []);
 
-    // Build user message content
-    const userParts: Array<
-      | { type: "text"; text: string }
-      | {
-          type: "file";
-          fileId: string;
-          filename?: string;
-          mimeType: string;
-          data: string;
-        }
-    > = [];
-    if (inputValue.trim()) {
-      userParts.push({ type: "text", text: inputValue });
+  const generatePersona = async () => {
+    if (!personaDescription.trim()) {
+      AntdMessage.warning("Please enter a persona description");
+      return;
     }
-    userParts.push(...fileParts);
 
-    const userMessage: ChatMessage = {
-      id: messageId,
-      role: "user",
-      content: inputValue,
-      timestamp: Date.now(),
-      contentItems: [],
-      uploadedFiles: [...uploadedFiles],
-      status: "waiting",
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue("");
-    setUploadedFiles([]);
-    setSending(true);
-    setCurrentMessageId(messageId);
-
+    setGenerating(true);
     try {
-      chrome.runtime.sendMessage({
-        requestId: uuidv4(),
-        type: "chat",
-        data: {
-          messageId: messageId,
-          user: userParts,
-        },
-      });
-    } catch (error) {
-      userMessage.status = "error";
-      console.error("Error sending message:", error);
-    } finally {
-      setSending(false);
-    }
-  }, [inputValue, uploadedFiles, sending, uploadFile]);
+      const config = await chrome.storage.sync.get(["llmConfig"]);
+      const llmConfig = config.llmConfig;
 
-  // Stop message
-  const stopMessage = useCallback((messageId: string) => {
-    chrome.runtime.sendMessage({
-      type: "stop",
-      data: { messageId },
-    });
-    setCurrentMessageId(null);
-  }, []);
-
-  // Handle file selection
-  const handleFileSelect = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const files = event.target.files;
-      if (!files || files.length === 0) return;
-
-      const newFiles: UploadedFile[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const base64Data = await fileToBase64(file);
-        newFiles.push({
-          id: uuidv4(),
-          file,
-          base64Data,
-          mimeType: file.type,
-          filename: file.name,
-        });
+      if (!llmConfig || !llmConfig.apiKey) {
+        AntdMessage.error("Please configure your OpenRouter API key in settings");
+        chrome.runtime.openOptionsPage();
+        return;
       }
-      setUploadedFiles((prev) => [...prev, ...newFiles]);
-    },
-    [fileToBase64]
-  );
 
-  // Remove file
-  const removeFile = useCallback((fileId: string) => {
-    setUploadedFiles((prev) => prev.filter((f) => f.id !== fileId));
-  }, []);
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${llmConfig.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: llmConfig.modelName || "anthropic/claude-sonnet-4.5",
+          messages: [
+            {
+              role: "user",
+              content: `Generate a detailed JSON persona from this description: "${personaDescription}".
 
-  const handleStop = useCallback(() => {
-    if (currentMessageId) {
-      stopMessage(currentMessageId);
+Include these exact fields:
+- demographics: {age (number), gender (string), location (string)}
+- email: generate a unique protonmail.com address
+- schedule: {wake_time (e.g. "7:00 AM"), sleep_time, work_hours (optional), meals (array of times), bathroom_breaks (number per day)}
+- interests: array of hobbies/interests
+- browsing_habits: {favorite_sites (array), session_length_minutes (number), search_patterns (array of typical searches)}
+- personality_traits: array of traits (e.g. "curious", "impatient")
+- tech_setup: {laptop_model (string), os (string)}
+
+Output ONLY valid JSON, no markdown or explanation.`
+            }
+          ],
+        }),
+      });
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content;
+
+      if (!content) {
+        throw new Error("No response from API");
+      }
+
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const personaData = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+
+      setPersona(personaData);
+      localStorage.setItem("persona", JSON.stringify(personaData));
+      AntdMessage.success("Persona generated successfully!");
+    } catch (error) {
+      console.error("Error generating persona:", error);
+      AntdMessage.error("Failed to generate persona: " + error);
+    } finally {
+      setGenerating(false);
     }
-  }, [currentMessageId, stopMessage]);
+  };
 
-  // Clear all messages
-  const clearMessages = useCallback(() => {
-    setMessages([]);
-    setCurrentMessageId(null);
-    chrome.runtime.sendMessage({
-      type: "clear_messages",
-    });
-  }, []);
+  const downloadPersona = () => {
+    if (!persona) return;
+
+    const dataStr = JSON.stringify(persona, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `persona_${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    AntdMessage.success("Persona downloaded!");
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const personaData = JSON.parse(e.target?.result as string);
+        setPersona(personaData);
+        localStorage.setItem("persona", JSON.stringify(personaData));
+        AntdMessage.success("Persona uploaded successfully!");
+      } catch (error) {
+        AntdMessage.error("Invalid persona file");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handlePlay = () => {
+    if (!persona) {
+      AntdMessage.warning("Please generate or upload a persona first");
+      return;
+    }
+    setIsPlaying(true);
+    AntdMessage.info("Simulation started (not implemented yet)");
+  };
+
+  const handlePause = () => {
+    setIsPlaying(false);
+    AntdMessage.info("Simulation paused");
+  };
+
+  const renderPersonaPreview = () => {
+    if (!persona) return null;
+
+    return (
+      <Card title="Persona Preview" style={{ marginTop: 16 }}>
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <div>
+            <Text strong>Demographics: </Text>
+            <Text>
+              {persona.demographics.age}y/o {persona.demographics.gender} from{" "}
+              {persona.demographics.location}
+            </Text>
+          </div>
+          <div>
+            <Text strong>Email: </Text>
+            <Text>{persona.email}</Text>
+          </div>
+          <div>
+            <Text strong>Schedule: </Text>
+            <Text>
+              Wakes at {persona.schedule.wake_time}, sleeps at {persona.schedule.sleep_time}
+            </Text>
+          </div>
+          <div>
+            <Text strong>Interests: </Text>
+            <Text>{persona.interests.join(", ")}</Text>
+          </div>
+          <div>
+            <Text strong>Personality: </Text>
+            <Text>{persona.personality_traits.join(", ")}</Text>
+          </div>
+          <div>
+            <Text strong>Tech: </Text>
+            <Text>
+              {persona.tech_setup.laptop_model} ({persona.tech_setup.os})
+            </Text>
+          </div>
+          <div>
+            <Text strong>Favorite Sites: </Text>
+            <Text>{persona.browsing_habits.favorite_sites.slice(0, 3).join(", ")}</Text>
+          </div>
+        </Space>
+      </Card>
+    );
+  };
+
 
   return (
     <div
@@ -213,67 +218,106 @@ const AppRun = () => {
         display: "flex",
         flexDirection: "column",
         height: "100vh",
-        backgroundColor: "#ffffff",
+        backgroundColor: darkMode ? "#1a1a1a" : "#ffffff",
+        color: darkMode ? "#ffffff" : "#000000",
+        padding: "20px",
+        overflowY: "auto",
       }}
     >
-      {/* Message area */}
-      <div
-        ref={messagesContainerRef}
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          overflowX: "hidden",
-          padding: "16px",
-          backgroundColor: "#f5f5f5",
-          position: "relative",
-        }}
-      >
-        {messages.length > 0 && (
-          <Tooltip title="Clear messages" placement="left">
-            <Button
-              type="text"
-              size="small"
-              icon={<ClearOutlined />}
-              onClick={clearMessages}
-              style={{
-                position: "absolute",
-                top: "6px",
-                zIndex: 999,
-                width: "32px",
-                height: "32px",
-                padding: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            />
-          </Tooltip>
-        )}
-        {messages.length === 0 ? (
-          <Empty
-            description="Start a conversation!"
-            style={{ marginTop: "20vh" }}
-          />
-        ) : (
-          messages.map((message) => (
-            <MessageItem key={message.id} message={message} />
-          ))
-        )}
-        <div ref={messagesEndRef} />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <Title level={2} style={{ margin: 0, color: darkMode ? "#ffffff" : "#000000" }}>
+          PersonaSurfer
+        </Title>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Text style={{ color: darkMode ? "#ffffff" : "#000000" }}>Dark Mode</Text>
+          <Switch checked={darkMode} onChange={setDarkMode} />
+        </div>
       </div>
 
-      {/* Input area */}
-      <ChatInput
-        inputValue={inputValue}
-        onInputChange={setInputValue}
-        onSend={sendMessage}
-        onStop={handleStop}
-        onFileSelect={handleFileSelect}
-        onRemoveFile={removeFile}
-        uploadedFiles={uploadedFiles}
-        sending={sending}
-        currentMessageId={currentMessageId}
-      />
+      <Card
+        title="1. Describe Your Persona"
+        style={{ marginBottom: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
+      >
+        <TextArea
+          rows={4}
+          placeholder="e.g., 20-year-old college student into gaming and memes"
+          value={personaDescription}
+          onChange={(e) => setPersonaDescription(e.target.value)}
+          style={{ marginBottom: 12 }}
+        />
+        <Button
+          type="primary"
+          onClick={generatePersona}
+          loading={generating}
+          block
+          size="large"
+        >
+          Generate Persona
+        </Button>
+      </Card>
+
+      <Card
+        title="2. Manage Persona"
+        style={{ marginBottom: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
+      >
+        <Space style={{ width: "100%" }}>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={downloadPersona}
+            disabled={!persona}
+          >
+            Download
+          </Button>
+          <Button
+            icon={<UploadOutlined />}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Upload
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            style={{ display: "none" }}
+            onChange={handleFileUpload}
+          />
+        </Space>
+      </Card>
+
+      {renderPersonaPreview()}
+
+      <Card
+        title="3. Control Simulation"
+        style={{ marginTop: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
+      >
+        <Space style={{ width: "100%" }}>
+          {!isPlaying ? (
+            <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              onClick={handlePlay}
+              disabled={!persona}
+              size="large"
+            >
+              Play
+            </Button>
+          ) : (
+            <Button
+              danger
+              icon={<PauseCircleOutlined />}
+              onClick={handlePause}
+              size="large"
+            >
+              Pause
+            </Button>
+          )}
+        </Space>
+        {!persona && (
+          <Paragraph style={{ marginTop: 12, color: "#999" }}>
+            Generate or upload a persona to start simulation
+          </Paragraph>
+        )}
+      </Card>
     </div>
   );
 };
