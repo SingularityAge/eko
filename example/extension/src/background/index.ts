@@ -16,10 +16,15 @@ import {
 import { initAgentServices } from "./agent";
 import WriteFileAgent from "./agent/file-agent";
 import { BrowserAgent } from "@eko-ai/eko-extension";
+import { PersonaEngine, PersonaData } from "./persona-engine";
 
 var chatAgent: ChatAgent | null = null;
 const humanCallbackIdMap = new Map<string, Function>();
 const abortControllers = new Map<string, AbortController>();
+
+let personaEngine: PersonaEngine | null = null;
+let simulationInterval: number | null = null;
+let isSimulationRunning = false;
 
 // Chat callback
 const chatCallback = {
@@ -306,7 +311,7 @@ async function handleGetTabs(requestId: string, data: any): Promise<void> {
         const bTime = (b as any).lastAccessed || 0;
         return bTime - aTime;
       })
-      .filter((tab) => !tab.url.startsWith("chrome://"))
+      .filter((tab) => !tab.url?.startsWith("chrome://"))
       .map((tab) => {
         const lastAccessed = (tab as any).lastAccessed;
         return {
@@ -337,6 +342,143 @@ async function handleGetTabs(requestId: string, data: any): Promise<void> {
   }
 }
 
+// Handle start simulation
+async function handleStartSimulation(requestId: string, data: any): Promise<void> {
+  try {
+    const personaData = data.persona as PersonaData;
+
+    if (!personaData) {
+      throw new Error("No persona data provided");
+    }
+
+    personaEngine = new PersonaEngine();
+    personaEngine.loadPersona(personaData);
+
+    await chrome.storage.local.set({
+      persona: personaData,
+      isSimulationRunning: true,
+    });
+
+    isSimulationRunning = true;
+    startSimulationLoop();
+
+    printLog("Simulation started", "success");
+    chrome.runtime.sendMessage({
+      requestId,
+      type: "startSimulation_result",
+      data: { success: true },
+    });
+  } catch (error) {
+    printLog("Failed to start simulation: " + error, "error");
+    chrome.runtime.sendMessage({
+      requestId,
+      type: "startSimulation_result",
+      data: { error: String(error) },
+    });
+  }
+}
+
+// Handle pause simulation
+async function handlePauseSimulation(requestId: string, data: any): Promise<void> {
+  try {
+    isSimulationRunning = false;
+    if (simulationInterval) {
+      clearInterval(simulationInterval);
+      simulationInterval = null;
+    }
+
+    await chrome.storage.local.set({ isSimulationRunning: false });
+
+    printLog("Simulation paused", "info");
+    chrome.runtime.sendMessage({
+      requestId,
+      type: "pauseSimulation_result",
+      data: { success: true },
+    });
+  } catch (error) {
+    chrome.runtime.sendMessage({
+      requestId,
+      type: "pauseSimulation_result",
+      data: { error: String(error) },
+    });
+  }
+}
+
+// Start simulation loop
+function startSimulationLoop(): void {
+  if (simulationInterval) {
+    clearInterval(simulationInterval);
+  }
+
+  simulationInterval = setInterval(async () => {
+    if (!isSimulationRunning || !personaEngine) {
+      return;
+    }
+
+    try {
+      const activity = personaEngine.getCurrentActivity();
+      const randomSite = personaEngine.getRandomSite();
+
+      personaEngine.updateEnergyLevel();
+
+      if (activity?.activity === "sleep") {
+        printLog("Persona is sleeping", "info");
+        return;
+      }
+
+      if (personaEngine.shouldTakeBreak()) {
+        printLog("Persona is taking a break", "info");
+        return;
+      }
+
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (tabs.length === 0 || Math.random() < 0.3) {
+        const newTab = await chrome.tabs.create({ url: randomSite });
+        printLog(`Navigating to ${randomSite}`, "info");
+
+        chrome.runtime.sendMessage({
+          type: "simulation_status",
+          data: {
+            status: "browsing",
+            site: randomSite,
+            activity: activity?.activity,
+            energy: personaEngine.getBrain()?.state.energyLevel,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Simulation loop error:", error);
+    }
+  }, Math.random() * 4000 + 1000);
+}
+
+// Get simulation status
+async function handleGetSimulationStatus(requestId: string, data: any): Promise<void> {
+  try {
+    const storage = await chrome.storage.local.get(["persona", "isSimulationRunning"]);
+
+    const status = {
+      isRunning: storage.isSimulationRunning || false,
+      persona: storage.persona || null,
+      currentActivity: personaEngine?.getCurrentActivity(),
+      brain: personaEngine?.getBrain(),
+    };
+
+    chrome.runtime.sendMessage({
+      requestId,
+      type: "getSimulationStatus_result",
+      data: status,
+    });
+  } catch (error) {
+    chrome.runtime.sendMessage({
+      requestId,
+      type: "getSimulationStatus_result",
+      data: { error: String(error) },
+    });
+  }
+}
+
 // Event routing mapping
 const eventHandlers: Record<
   string,
@@ -348,6 +490,9 @@ const eventHandlers: Record<
   stop: handleStop,
   clear_messages: handleClearMessages,
   getTabs: handleGetTabs,
+  startSimulation: handleStartSimulation,
+  pauseSimulation: handlePauseSimulation,
+  getSimulationStatus: handleGetSimulationStatus,
 };
 
 // Message listener

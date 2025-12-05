@@ -32,6 +32,16 @@ interface Persona {
     laptop_model: string;
     os: string;
   };
+  credentials?: {
+    email_password?: string;
+  };
+}
+
+interface SimulationStatus {
+  status: string;
+  site: string;
+  activity: string;
+  energy: number;
 }
 
 const AppRun = () => {
@@ -40,17 +50,48 @@ const AppRun = () => {
   const [generating, setGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
+  const [emailPassword, setEmailPassword] = useState("");
+  const [simulationStatus, setSimulationStatus] = useState<SimulationStatus | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const savedPersona = localStorage.getItem("persona");
     if (savedPersona) {
       try {
-        setPersona(JSON.parse(savedPersona));
+        const personaData = JSON.parse(savedPersona);
+        setPersona(personaData);
+        setEmailPassword(personaData.credentials?.email_password || "");
       } catch (e) {
         console.error("Failed to load persona", e);
       }
     }
+
+    chrome.storage.local.get(["isSimulationRunning"], (result) => {
+      setIsPlaying(result.isSimulationRunning || false);
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleMessage = (message: any) => {
+      if (message.type === "simulation_status") {
+        setSimulationStatus(message.data);
+      } else if (message.type === "log") {
+        const level = message.data.level;
+        const msg = message.data.message;
+        const showMessage =
+          level === "error"
+            ? AntdMessage.error
+            : level === "success"
+            ? AntdMessage.success
+            : AntdMessage.info;
+        showMessage(msg, 3);
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleMessage);
+    return () => {
+      chrome.runtime.onMessage.removeListener(handleMessage);
+    };
   }, []);
 
   const generatePersona = async () => {
@@ -151,18 +192,40 @@ Output ONLY valid JSON, no markdown or explanation.`
     reader.readAsText(file);
   };
 
-  const handlePlay = () => {
+  const handlePlay = async () => {
     if (!persona) {
       AntdMessage.warning("Please generate or upload a persona first");
       return;
     }
-    setIsPlaying(true);
-    AntdMessage.info("Simulation started (not implemented yet)");
+
+    const personaWithCreds = {
+      ...persona,
+      credentials: {
+        email_password: emailPassword,
+      },
+    };
+
+    try {
+      chrome.runtime.sendMessage({
+        requestId: Date.now().toString(),
+        type: "startSimulation",
+        data: { persona: personaWithCreds },
+      });
+      setIsPlaying(true);
+      localStorage.setItem("persona", JSON.stringify(personaWithCreds));
+    } catch (error) {
+      AntdMessage.error("Failed to start simulation: " + error);
+    }
   };
 
   const handlePause = () => {
+    chrome.runtime.sendMessage({
+      requestId: Date.now().toString(),
+      type: "pauseSimulation",
+      data: {},
+    });
     setIsPlaying(false);
-    AntdMessage.info("Simulation paused");
+    setSimulationStatus(null);
   };
 
   const renderPersonaPreview = () => {
@@ -260,27 +323,46 @@ Output ONLY valid JSON, no markdown or explanation.`
         title="2. Manage Persona"
         style={{ marginBottom: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
       >
-        <Space style={{ width: "100%" }}>
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={downloadPersona}
-            disabled={!persona}
-          >
-            Download
-          </Button>
-          <Button
-            icon={<UploadOutlined />}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            Upload
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            style={{ display: "none" }}
-            onChange={handleFileUpload}
-          />
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Space style={{ width: "100%" }}>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={downloadPersona}
+              disabled={!persona}
+            >
+              Download
+            </Button>
+            <Button
+              icon={<UploadOutlined />}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Upload
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              style={{ display: "none" }}
+              onChange={handleFileUpload}
+            />
+          </Space>
+
+          {persona && (
+            <div style={{ width: "100%", marginTop: 12 }}>
+              <Text strong style={{ display: "block", marginBottom: 8 }}>
+                Email Credentials (Optional)
+              </Text>
+              <Input.Password
+                placeholder="Email password for simulation"
+                value={emailPassword}
+                onChange={(e) => setEmailPassword(e.target.value)}
+                style={{ marginBottom: 4 }}
+              />
+              <Text style={{ fontSize: 12, color: "#888" }}>
+                ⚠️ Stored locally only. Used for simulation purposes.
+              </Text>
+            </div>
+          )}
         </Space>
       </Card>
 
@@ -290,33 +372,91 @@ Output ONLY valid JSON, no markdown or explanation.`
         title="3. Control Simulation"
         style={{ marginTop: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
       >
-        <Space style={{ width: "100%" }}>
-          {!isPlaying ? (
-            <Button
-              type="primary"
-              icon={<PlayCircleOutlined />}
-              onClick={handlePlay}
-              disabled={!persona}
-              size="large"
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Space style={{ width: "100%" }}>
+            {!isPlaying ? (
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                onClick={handlePlay}
+                disabled={!persona}
+                size="large"
+              >
+                Play
+              </Button>
+            ) : (
+              <Button
+                danger
+                icon={<PauseCircleOutlined />}
+                onClick={handlePause}
+                size="large"
+              >
+                Pause
+              </Button>
+            )}
+          </Space>
+
+          {!persona && (
+            <Paragraph style={{ marginTop: 12, color: "#999" }}>
+              Generate or upload a persona to start simulation
+            </Paragraph>
+          )}
+
+          {simulationStatus && isPlaying && (
+            <Card
+              size="small"
+              style={{
+                marginTop: 12,
+                backgroundColor: darkMode ? "#333" : "#f0f0f0",
+                borderColor: "#52c41a",
+              }}
             >
-              Play
-            </Button>
-          ) : (
-            <Button
-              danger
-              icon={<PauseCircleOutlined />}
-              onClick={handlePause}
-              size="large"
-            >
-              Pause
-            </Button>
+              <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                <div>
+                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
+                    Status:{" "}
+                  </Text>
+                  <Text style={{ color: "#52c41a" }}>
+                    {simulationStatus.status}
+                  </Text>
+                </div>
+                <div>
+                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
+                    Browsing:{" "}
+                  </Text>
+                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>
+                    {simulationStatus.site}
+                  </Text>
+                </div>
+                <div>
+                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
+                    Activity:{" "}
+                  </Text>
+                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>
+                    {simulationStatus.activity}
+                  </Text>
+                </div>
+                <div>
+                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
+                    Energy:{" "}
+                  </Text>
+                  <Text
+                    style={{
+                      color:
+                        simulationStatus.energy > 50
+                          ? "#52c41a"
+                          : simulationStatus.energy > 30
+                          ? "#faad14"
+                          : "#f5222d",
+                    }}
+                  >
+                    {simulationStatus.energy.toFixed(0)}%
+                  </Text>
+                </div>
+              </Space>
+            </Card>
           )}
         </Space>
-        {!persona && (
-          <Paragraph style={{ marginTop: 12, color: "#999" }}>
-            Generate or upload a persona to start simulation
-          </Paragraph>
-        )}
       </Card>
     </div>
   );
