@@ -1,8 +1,9 @@
 import "./index.css";
 import { createRoot } from "react-dom/client";
-import { Button, Input, Card, Switch, message as AntdMessage, Space, Typography } from "antd";
-import { PlayCircleOutlined, PauseCircleOutlined, DownloadOutlined, UploadOutlined } from "@ant-design/icons";
+import { Button, Input, Card, Switch, message as AntdMessage, Space, Typography, Tabs } from "antd";
+import { PlayCircleOutlined, PauseCircleOutlined, DownloadOutlined, UploadOutlined, BarChartOutlined, SettingOutlined } from "@ant-design/icons";
 import React, { useState, useRef, useEffect } from "react";
+import { AnalyticsTimeline } from "./components/AnalyticsTimeline";
 
 const { TextArea } = Input;
 const { Title, Text, Paragraph } = Typography;
@@ -53,6 +54,20 @@ const AppRun = () => {
   const [emailPassword, setEmailPassword] = useState("");
   const [simulationStatus, setSimulationStatus] = useState<SimulationStatus | null>(null);
   const [emailAutoVerifyEnabled, setEmailAutoVerifyEnabled] = useState(false);
+  const [activeTab, setActiveTab] = useState("control");
+  const [activities, setActivities] = useState<any[]>([]);
+  const [activityStats, setActivityStats] = useState<any>({
+    totalEvents: 0,
+    pageVisits: 0,
+    searches: 0,
+    emailChecks: 0,
+    distractions: 0,
+    signups: 0,
+    verifications: 0,
+    totalActiveTime: 0,
+    sessionStart: Date.now(),
+  });
+  const [timeline, setTimeline] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -74,6 +89,22 @@ const AppRun = () => {
   }, []);
 
   useEffect(() => {
+    loadActivityData();
+    const interval = setInterval(loadActivityData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadActivityData = () => {
+    chrome.runtime.sendMessage({ type: "getActivities" }, (response) => {
+      if (response) {
+        setActivities(response.activities || []);
+        setActivityStats(response.stats || activityStats);
+        setTimeline(response.timeline || []);
+      }
+    });
+  };
+
+  useEffect(() => {
     const handleMessage = (message: any) => {
       if (message.type === "simulation_status") {
         setSimulationStatus(message.data);
@@ -87,6 +118,10 @@ const AppRun = () => {
             ? AntdMessage.success
             : AntdMessage.info;
         showMessage(msg, 3);
+      } else if (message.type === "activity_update") {
+        setActivities(message.data.activities || []);
+        setActivityStats(message.data.stats || activityStats);
+        setTimeline(message.data.timeline || []);
       }
     };
 
@@ -277,28 +312,8 @@ Output ONLY valid JSON, no markdown or explanation.`
   };
 
 
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        backgroundColor: darkMode ? "#1a1a1a" : "#ffffff",
-        color: darkMode ? "#ffffff" : "#000000",
-        padding: "20px",
-        overflowY: "auto",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <Title level={2} style={{ margin: 0, color: darkMode ? "#ffffff" : "#000000" }}>
-          PersonaSurfer
-        </Title>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Text style={{ color: darkMode ? "#ffffff" : "#000000" }}>Dark Mode</Text>
-          <Switch checked={darkMode} onChange={setDarkMode} />
-        </div>
-      </div>
-
+  const renderControlTab = () => (
+    <>
       <Card
         title="1. Describe Your Persona"
         style={{ marginBottom: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
@@ -504,6 +519,64 @@ Output ONLY valid JSON, no markdown or explanation.`
           )}
         </Space>
       </Card>
+    </>
+  );
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        backgroundColor: darkMode ? "#1a1a1a" : "#ffffff",
+        color: darkMode ? "#ffffff" : "#000000",
+        padding: "20px",
+        overflowY: "auto",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <Title level={2} style={{ margin: 0, color: darkMode ? "#ffffff" : "#000000" }}>
+          PersonaSurfer
+        </Title>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Text style={{ color: darkMode ? "#ffffff" : "#000000" }}>Dark Mode</Text>
+          <Switch checked={darkMode} onChange={setDarkMode} />
+        </div>
+      </div>
+
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: 'control',
+            label: (
+              <span>
+                <SettingOutlined />
+                Control
+              </span>
+            ),
+            children: renderControlTab(),
+          },
+          {
+            key: 'analytics',
+            label: (
+              <span>
+                <BarChartOutlined />
+                Analytics
+              </span>
+            ),
+            children: (
+              <AnalyticsTimeline
+                activities={activities}
+                stats={activityStats}
+                timeline={timeline}
+                darkMode={darkMode}
+              />
+            ),
+          },
+        ]}
+      />
     </div>
   );
 };

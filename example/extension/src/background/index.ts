@@ -18,6 +18,10 @@ import WriteFileAgent from "./agent/file-agent";
 import { BrowserAgent } from "@eko-ai/eko-extension";
 import { PersonaEngine, PersonaData } from "./persona-engine";
 import { EmailVerifier } from "./email-verifier";
+import { ErrorRecovery } from "./error-recovery";
+import { ActivityTracker } from "./activity-tracker";
+import { PersonaRandomness } from "./random-seed";
+import { CryptoHelper } from "./crypto-helper";
 
 var chatAgent: ChatAgent | null = null;
 const humanCallbackIdMap = new Map<string, Function>();
@@ -25,6 +29,9 @@ const abortControllers = new Map<string, AbortController>();
 
 let personaEngine: PersonaEngine | null = null;
 let emailVerifier: EmailVerifier | null = null;
+let errorRecovery: ErrorRecovery | null = null;
+let activityTracker: ActivityTracker | null = null;
+let personaRandomness: PersonaRandomness | null = null;
 let simulationInterval: number | null = null;
 let isSimulationRunning = false;
 
@@ -159,6 +166,13 @@ const taskCallback: AgentStreamCallback & HumanCallback = {
 };
 
 export async function init(): Promise<ChatAgent | void> {
+  if (!errorRecovery) {
+    errorRecovery = new ErrorRecovery();
+  }
+  if (!activityTracker) {
+    activityTracker = new ActivityTracker();
+  }
+
   const storageKey = "llmConfig";
   const llmConfig = (await chrome.storage.sync.get([storageKey]))[storageKey];
   if (!llmConfig || !llmConfig.apiKey) {
@@ -356,15 +370,23 @@ async function handleStartSimulation(requestId: string, data: any): Promise<void
     personaEngine = new PersonaEngine();
     personaEngine.loadPersona(personaData);
 
+    const personaSeed = data.seed || Date.now();
+    personaRandomness = new PersonaRandomness(personaData.email, personaSeed);
+
+    if (!activityTracker) {
+      activityTracker = new ActivityTracker();
+    }
+
     await chrome.storage.local.set({
       persona: personaData,
+      personaSeed: personaSeed,
       isSimulationRunning: true,
     });
 
     isSimulationRunning = true;
     startSimulationLoop();
 
-    printLog("Simulation started", "success");
+    printLog(`Simulation started (seed: ${personaSeed})`, "success");
     chrome.runtime.sendMessage({
       requestId,
       type: "startSimulation_result",
@@ -428,6 +450,9 @@ function startSimulationLoop(): void {
 
       if (activity?.activity === "sleep") {
         printLog("Persona is sleeping", "info");
+        if (activityTracker) {
+          await activityTracker.trackActivity('idle', undefined, 'Sleeping');
+        }
         chrome.runtime.sendMessage({
           type: "simulation_status",
           data: {
@@ -473,6 +498,10 @@ function startSimulationLoop(): void {
         const newTab = await chrome.tabs.create({ url: randomSite, active: false });
         printLog(`Opening ${randomSite}`, "info");
 
+        if (activityTracker) {
+          await activityTracker.trackActivity('page_visit', randomSite, `Browsing: ${activity?.activity}`);
+        }
+
         if (newTab.id) {
           setTimeout(async () => {
             try {
@@ -492,6 +521,9 @@ function startSimulationLoop(): void {
               });
             } catch (e) {
               console.log("Content script not ready yet");
+              if (errorRecovery && newTab.id) {
+                await errorRecovery.handleTabError(newTab.id);
+              }
             }
           }, 2000);
         }
@@ -518,9 +550,15 @@ function startSimulationLoop(): void {
             if (response && response.url) {
               await chrome.tabs.create({ url: response.url, active: false });
               printLog(`Got distracted, opening ${response.url}`, "info");
+              if (activityTracker) {
+                await activityTracker.trackActivity('distraction', response.url, 'Distracted browsing');
+              }
             }
           } catch (e) {
             console.log("Tab not responding to distraction check");
+            if (errorRecovery && randomTab.id) {
+              await errorRecovery.handleTabError(randomTab.id);
+            }
           }
         }
       }
@@ -630,15 +668,52 @@ async function handleVerificationPageDetected(requestId: string, data: any): Pro
 async function handleEnableEmailAutoVerify(requestId: string, data: any): Promise<void> {
   const { enabled, email, password } = data;
 
+  let encryptedCredentials = '';
+  if (enabled && email && password) {
+    try {
+      const masterPassword = await chrome.storage.local.get(['masterPassword']).then(
+        result => result.masterPassword || CryptoHelper.generateMasterPassword()
+      );
+
+      if (!await chrome.storage.local.get(['masterPassword']).then(r => r.masterPassword)) {
+        await chrome.storage.local.set({ masterPassword });
+      }
+
+      encryptedCredentials = await CryptoHelper.encryptCredentials(email, password, masterPassword);
+    } catch (error) {
+      console.error('Error encrypting credentials:', error);
+    }
+  }
+
   await chrome.storage.local.set({
     emailAutoVerifyEnabled: enabled,
-    emailCredentials: {
-      email: email || '',
-      password: password || '',
-    },
+    emailCredentials: encryptedCredentials,
   });
 
   printLog(`Email auto-verify ${enabled ? 'enabled' : 'disabled'}`, "success");
+}
+
+async function handleGetActivities(requestId: string, data: any): Promise<void> {
+  if (!activityTracker) {
+    activityTracker = new ActivityTracker();
+  }
+
+  const activities = activityTracker.getActivities(100);
+  const stats = activityTracker.getStats();
+  const timeline = activityTracker.getTimeline(30);
+
+  chrome.runtime.sendMessage({
+    type: "activity_update",
+    data: { activities, stats, timeline },
+    requestId,
+  });
+}
+
+async function handleClearActivities(requestId: string, data: any): Promise<void> {
+  if (activityTracker) {
+    await activityTracker.clearActivities();
+    printLog("Activity history cleared", "success");
+  }
 }
 
 async function attemptEmailLogin(): Promise<void> {
@@ -722,6 +797,8 @@ const eventHandlers: Record<
   signupSubmitted: handleSignupSubmitted,
   verificationPageDetected: handleVerificationPageDetected,
   enableEmailAutoVerify: handleEnableEmailAutoVerify,
+  getActivities: handleGetActivities,
+  clearActivities: handleClearActivities,
 };
 
 // Message listener
