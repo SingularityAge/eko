@@ -9,10 +9,10 @@
     "packages/eko-web"
   ],
   "scripts": {
-    "build": "pnpm -r --sequential build",
-    "build-eko": "pnpm --filter @eko-ai/eko build",
-    "test": "pnpm -r --sequential test",
-    "clean": "rm -rf node_modules && pnpm -r exec -- rm -rf node_modules dist"
+    "build": "npx -y pnpm@latest -r --sequential build",
+    "build-eko": "npx -y pnpm@latest --filter @eko-ai/eko build",
+    "test": "npx -y pnpm@latest -r --sequential test",
+    "clean": "rm -rf node_modules && npx -y pnpm@latest -r exec -- rm -rf node_modules dist"
   },
   "author": "FellouAI",
   "license": "MIT",

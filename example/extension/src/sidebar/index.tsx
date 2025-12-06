@@ -51,6 +51,7 @@ const AppRun = () => {
   const [generating, setGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
+  const [personaEmail, setPersonaEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
   const [simulationStatus, setSimulationStatus] = useState<SimulationStatus | null>(null);
   const [emailAutoVerifyEnabled, setEmailAutoVerifyEnabled] = useState(false);
@@ -76,6 +77,7 @@ const AppRun = () => {
       try {
         const personaData = JSON.parse(savedPersona);
         setPersona(personaData);
+        setPersonaEmail(personaData.email || "");
         setEmailPassword(personaData.credentials?.email_password || "");
       } catch (e) {
         console.error("Failed to load persona", e);
@@ -137,6 +139,11 @@ const AppRun = () => {
       return;
     }
 
+    if (!personaEmail.trim()) {
+      AntdMessage.warning("Please enter an email address for the persona");
+      return;
+    }
+
     setGenerating(true);
     try {
       const config = await chrome.storage.sync.get(["llmConfig"]);
@@ -163,14 +170,13 @@ const AppRun = () => {
 
 Include these exact fields:
 - demographics: {age (number), gender (string), location (string)}
-- email: generate a unique protonmail.com address
 - schedule: {wake_time (e.g. "7:00 AM"), sleep_time, work_hours (optional), meals (array of times), bathroom_breaks (number per day)}
 - interests: array of hobbies/interests
 - browsing_habits: {favorite_sites (array), session_length_minutes (number), search_patterns (array of typical searches)}
 - personality_traits: array of traits (e.g. "curious", "impatient")
 - tech_setup: {laptop_model (string), os (string)}
 
-Output ONLY valid JSON, no markdown or explanation.`
+Do NOT include an email field. Output ONLY valid JSON, no markdown or explanation.`
             }
           ],
         }),
@@ -185,6 +191,8 @@ Output ONLY valid JSON, no markdown or explanation.`
 
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       const personaData = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+
+      personaData.email = personaEmail;
 
       setPersona(personaData);
       localStorage.setItem("persona", JSON.stringify(personaData));
@@ -220,6 +228,8 @@ Output ONLY valid JSON, no markdown or explanation.`
       try {
         const personaData = JSON.parse(e.target?.result as string);
         setPersona(personaData);
+        setPersonaEmail(personaData.email || "");
+        setEmailPassword(personaData.credentials?.email_password || "");
         localStorage.setItem("persona", JSON.stringify(personaData));
         AntdMessage.success("Persona uploaded successfully!");
       } catch (error) {
@@ -325,6 +335,12 @@ Output ONLY valid JSON, no markdown or explanation.`
           onChange={(e) => setPersonaDescription(e.target.value)}
           style={{ marginBottom: 12 }}
         />
+        <Input
+          placeholder="Persona email (e.g., yourname@protonmail.com)"
+          value={personaEmail}
+          onChange={(e) => setPersonaEmail(e.target.value)}
+          style={{ marginBottom: 12 }}
+        />
         <Button
           type="primary"
           onClick={generatePersona}
@@ -367,7 +383,23 @@ Output ONLY valid JSON, no markdown or explanation.`
           {persona && (
             <div style={{ width: "100%", marginTop: 12 }}>
               <Text strong style={{ display: "block", marginBottom: 8 }}>
-                Email Credentials (Optional)
+                Persona Email
+              </Text>
+              <Input
+                placeholder="Persona email address"
+                value={personaEmail}
+                onChange={(e) => {
+                  setPersonaEmail(e.target.value);
+                  if (persona) {
+                    const updatedPersona = { ...persona, email: e.target.value };
+                    setPersona(updatedPersona);
+                    localStorage.setItem("persona", JSON.stringify(updatedPersona));
+                  }
+                }}
+                style={{ marginBottom: 12 }}
+              />
+              <Text strong style={{ display: "block", marginBottom: 8 }}>
+                Email Password (Optional)
               </Text>
               <Input.Password
                 placeholder="Email password for simulation"
