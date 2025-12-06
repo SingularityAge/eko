@@ -4,21 +4,25 @@ import Login, { Password, Username, Submit } from "@react-login-page/base";
 const App = () => {
   const [status, setStatus] = useState("");
 
-  const handle = (event) => {
+  const handle = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!event.currentTarget[0].value) {
+    const form = event.currentTarget;
+    const username = (form.elements.namedItem("username") as HTMLInputElement)?.value;
+    const password = (form.elements.namedItem("password") as HTMLInputElement)?.value;
+
+    if (!username) {
       setStatus("Username cannot be empty");
       return;
     }
-    if (event.currentTarget[0].value != "admin") {
+    if (username !== "admin") {
       setStatus("Invalid username");
       return;
     }
-    if (!event.currentTarget[1].value) {
+    if (!password) {
       setStatus("Password cannot be empty");
       return;
     }
-    if (event.currentTarget[1].value != "666666") {
+    if (password !== "666666") {
       setStatus("Invalid password");
       return;
     }

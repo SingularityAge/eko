@@ -1,5 +1,5 @@
 import React from "react";
-import App from "./App.tsx";
+import App from "./App";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 
@@ -11,7 +11,7 @@ root.render(
 );
 
 // Login automation testing
-import { auto_test_case } from "./main.ts";
+import { auto_test_case } from "./main";
 setTimeout(async () => {
   await auto_test_case();
 }, 500);
