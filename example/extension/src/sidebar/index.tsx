@@ -385,36 +385,51 @@ const ActivityTimeline: React.FC<{ persona: Persona; currentActivity?: string }>
     return elements;
   };
 
-  // Render hour markers
+  // Render hour markers at classical clock divisions
   const renderHourMarkers = () => {
     const markers: JSX.Element[] = [];
-    for (let i = -12; i <= 12; i += 3) {
-      let hour = Math.floor(currentHour + i);
-      if (hour < 0) hour += 24;
-      if (hour >= 24) hour -= 24;
+    // Classical clock divisions: 12AM, 3AM, 6AM, 9AM, 12PM, 3PM, 6PM, 9PM
+    const clockHours = [0, 3, 6, 9, 12, 15, 18, 21];
 
-      const position = ((i + 12) / 24) * 100;
+    clockHours.forEach((hour) => {
+      // Check if this hour is visible in our 24-hour window
+      let normalizedHour = hour;
+
+      // Calculate position relative to current time centered at 50%
+      let hoursFromNow = hour - currentHour;
+
+      // Handle wrap-around
+      if (hoursFromNow > 12) hoursFromNow -= 24;
+      if (hoursFromNow < -12) hoursFromNow += 24;
+
+      // Only show if within visible range
+      if (hoursFromNow < -12 || hoursFromNow > 12) return;
+
+      const position = ((hoursFromNow + 12) / 24) * 100;
+
+      // Format display
       const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
       const ampm = hour < 12 ? 'AM' : 'PM';
 
       markers.push(
         <div
-          key={`marker-${i}`}
+          key={`marker-${hour}`}
           className="hour-marker"
           style={{ left: `${position}%` }}
         >
-          <span>{displayHour}{ampm}</span>
+          <span className="hour-marker-text">{displayHour}{ampm}</span>
         </div>
       );
-    }
+    });
+
     return markers;
   };
 
   return (
     <div className="activity-timeline-container">
       <div className="timeline-header">
-        <span className="timeline-label-text">
-          {activeActivity?.name || currentActivity || "Current Activity"}
+        <span className="timeline-status-text">
+          Status: {activeActivity?.name || currentActivity || "Unknown"}
         </span>
         <span className="timeline-time">
           {currentTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
@@ -425,10 +440,9 @@ const ActivityTimeline: React.FC<{ persona: Persona; currentActivity?: string }>
         <div className="timeline-fade-right" />
         <div className="timeline-track">
           {renderActivities()}
-          {/* Current time indicator */}
+          {/* Current time indicator - arrow pointing down */}
           <div className="current-time-indicator" style={{ left: '50%' }}>
-            <div className="indicator-line" />
-            <div className="indicator-dot" />
+            <div className="indicator-arrow">▼</div>
           </div>
         </div>
         <div className="timeline-hours">
