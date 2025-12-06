@@ -1,9 +1,9 @@
 import "./index.css";
 import { createRoot } from "react-dom/client";
 import { message as AntdMessage } from "antd";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 
-// SVG Icons as React components
+// SVG Icons as React components - all sized consistently
 const LogoIcon = () => (
   <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
     <rect width="32" height="32" rx="8" fill="url(#logoGradient)"/>
@@ -68,56 +68,6 @@ const UploadIcon = () => (
   </svg>
 );
 
-const UserIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-    <circle cx="12" cy="7" r="4"/>
-  </svg>
-);
-
-const MailIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-    <polyline points="22,6 12,13 2,6"/>
-  </svg>
-);
-
-const ClockIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <polyline points="12 6 12 12 16 14"/>
-  </svg>
-);
-
-const HeartIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-  </svg>
-);
-
-const GlobeIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <line x1="2" y1="12" x2="22" y2="12"/>
-    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-  </svg>
-);
-
-const LockIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-  </svg>
-);
-
-const AlertIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <line x1="12" y1="8" x2="12" y2="12"/>
-    <line x1="12" y1="16" x2="12.01" y2="16"/>
-  </svg>
-);
-
 const SparklesIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 3L13.5 8.5L19 10L13.5 11.5L12 17L10.5 11.5L5 10L10.5 8.5L12 3Z"/>
@@ -164,12 +114,338 @@ interface SimulationStatus {
 
 type SimulationState = "idle" | "running" | "paused";
 
+// Activity types and colors
+interface Activity {
+  name: string;
+  startHour: number;
+  endHour: number;
+  color: string;
+}
+
+// Helper to parse time string to hours
+const parseTimeToHours = (timeStr: string): number => {
+  const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (!match) return 0;
+  let hours = parseInt(match[1]);
+  const minutes = parseInt(match[2]);
+  const period = match[3]?.toUpperCase();
+
+  if (period === "PM" && hours !== 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+
+  return hours + minutes / 60;
+};
+
+// Generate activities from persona schedule
+const generateActivities = (persona: Persona): Activity[] => {
+  const activities: Activity[] = [];
+  const wakeHour = parseTimeToHours(persona.schedule.wake_time);
+  const sleepHour = parseTimeToHours(persona.schedule.sleep_time);
+
+  // Sleep (previous night until wake)
+  activities.push({
+    name: "Sleep",
+    startHour: sleepHour > wakeHour ? sleepHour - 24 : sleepHour,
+    endHour: wakeHour,
+    color: "#6B7280"
+  });
+
+  // Morning routine
+  activities.push({
+    name: "Morning Routine",
+    startHour: wakeHour,
+    endHour: wakeHour + 0.5,
+    color: "#8B5CF6"
+  });
+
+  // Breakfast
+  const breakfastTime = persona.schedule.meals[0] ? parseTimeToHours(persona.schedule.meals[0]) : wakeHour + 0.5;
+  activities.push({
+    name: "Breakfast",
+    startHour: breakfastTime,
+    endHour: breakfastTime + 0.5,
+    color: "#F59E0B"
+  });
+
+  // Work hours if defined
+  if (persona.schedule.work_hours) {
+    const workMatch = persona.schedule.work_hours.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM)?)\s*-\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM)?)/i);
+    if (workMatch) {
+      const workStart = parseTimeToHours(workMatch[1]);
+      const workEnd = parseTimeToHours(workMatch[2]);
+      activities.push({
+        name: "Work",
+        startHour: workStart,
+        endHour: workEnd,
+        color: "#3B82F6"
+      });
+    }
+  } else {
+    // Default work hours
+    activities.push({
+      name: "Browsing",
+      startHour: breakfastTime + 0.5,
+      endHour: 12,
+      color: "#10B981"
+    });
+  }
+
+  // Lunch
+  const lunchTime = persona.schedule.meals[1] ? parseTimeToHours(persona.schedule.meals[1]) : 12;
+  activities.push({
+    name: "Lunch",
+    startHour: lunchTime,
+    endHour: lunchTime + 0.75,
+    color: "#F59E0B"
+  });
+
+  // Afternoon activities
+  activities.push({
+    name: "Browsing",
+    startHour: lunchTime + 0.75,
+    endHour: 17,
+    color: "#10B981"
+  });
+
+  // Dinner
+  const dinnerTime = persona.schedule.meals[2] ? parseTimeToHours(persona.schedule.meals[2]) : 18;
+  activities.push({
+    name: "Dinner",
+    startHour: dinnerTime,
+    endHour: dinnerTime + 1,
+    color: "#F59E0B"
+  });
+
+  // Evening leisure
+  activities.push({
+    name: "Leisure",
+    startHour: dinnerTime + 1,
+    endHour: sleepHour,
+    color: "#EC4899"
+  });
+
+  // Sleep (tonight)
+  activities.push({
+    name: "Sleep",
+    startHour: sleepHour,
+    endHour: sleepHour + (24 - sleepHour) + wakeHour,
+    color: "#6B7280"
+  });
+
+  return activities.sort((a, b) => a.startHour - b.startHour);
+};
+
+// Activity Timeline Component
+const ActivityTimeline: React.FC<{ persona: Persona; currentActivity?: string }> = ({ persona, currentActivity }) => {
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const timelineRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+
+  const currentHour = currentTime.getHours() + currentTime.getMinutes() / 60;
+  const activities = useMemo(() => generateActivities(persona), [persona]);
+
+  // Timeline shows 24 hours centered on current time
+  const timelineStart = currentHour - 12;
+  const timelineEnd = currentHour + 12;
+
+  // Get position percentage for an hour
+  const getPosition = (hour: number): number => {
+    let normalizedHour = hour;
+    // Handle wrap-around
+    if (normalizedHour < timelineStart) normalizedHour += 24;
+    if (normalizedHour > timelineEnd) normalizedHour -= 24;
+    return ((normalizedHour - timelineStart) / 24) * 100;
+  };
+
+  // Get width percentage for duration
+  const getWidth = (startHour: number, endHour: number): number => {
+    const duration = endHour - startHour;
+    return (duration / 24) * 100;
+  };
+
+  // Find current activity
+  const getCurrentActivity = (): Activity | null => {
+    for (const activity of activities) {
+      let start = activity.startHour;
+      let end = activity.endHour;
+
+      // Normalize hours for comparison
+      if (start < 0) start += 24;
+      if (end > 24) end -= 24;
+
+      if (start <= currentHour && currentHour < end) {
+        return activity;
+      }
+      // Handle overnight activities
+      if (start > end && (currentHour >= start || currentHour < end)) {
+        return activity;
+      }
+    }
+    return null;
+  };
+
+  const activeActivity = getCurrentActivity();
+
+  // Render activity segments
+  const renderActivities = () => {
+    const elements: JSX.Element[] = [];
+    let labelDirection = true; // true = up, false = down
+
+    activities.forEach((activity, index) => {
+      let startHour = activity.startHour;
+      let endHour = activity.endHour;
+
+      // Normalize hours
+      if (startHour < 0) startHour += 24;
+
+      // Check if activity is visible in current window
+      const visibleStart = Math.max(startHour, timelineStart);
+      const visibleEnd = Math.min(endHour, timelineEnd);
+
+      if (visibleEnd <= visibleStart) return;
+
+      const left = getPosition(visibleStart);
+      const width = getWidth(visibleStart, visibleEnd);
+
+      if (width <= 0 || left < 0 || left > 100) return;
+
+      const isActive = activeActivity?.name === activity.name;
+      const isPast = endHour <= currentHour;
+      const isFuture = startHour > currentHour;
+
+      // Calculate opacity for future parts of current activity
+      let opacity = 1;
+      if (isActive && !isPast) {
+        // Current activity - show completed part solid, remaining part at 50%
+        opacity = 1;
+      } else if (isFuture) {
+        opacity = 0.5;
+      }
+
+      // Segment bar
+      elements.push(
+        <div
+          key={`segment-${index}`}
+          className="timeline-segment"
+          style={{
+            left: `${left}%`,
+            width: `${width}%`,
+            backgroundColor: activity.color,
+            opacity: opacity,
+          }}
+        />
+      );
+
+      // For active activity, show the remaining time with 50% opacity
+      if (isActive && !isPast && !isFuture) {
+        const remainingStart = currentHour;
+        const remainingLeft = getPosition(remainingStart);
+        const remainingWidth = getWidth(remainingStart, visibleEnd);
+
+        elements.push(
+          <div
+            key={`segment-future-${index}`}
+            className="timeline-segment"
+            style={{
+              left: `${remainingLeft}%`,
+              width: `${remainingWidth}%`,
+              backgroundColor: activity.color,
+              opacity: 0.5,
+            }}
+          />
+        );
+      }
+
+      // Label with alternating direction
+      const labelLeft = left + width / 2;
+      if (labelLeft > 5 && labelLeft < 95 && width > 2) {
+        elements.push(
+          <div
+            key={`label-${index}`}
+            className={`timeline-label ${labelDirection ? 'label-up' : 'label-down'}`}
+            style={{
+              left: `${labelLeft}%`,
+              color: activity.color,
+            }}
+          >
+            <div className="label-line" style={{ backgroundColor: activity.color }} />
+            <span className="label-text">{activity.name}</span>
+          </div>
+        );
+        labelDirection = !labelDirection; // Alternate
+      }
+    });
+
+    return elements;
+  };
+
+  // Render hour markers
+  const renderHourMarkers = () => {
+    const markers: JSX.Element[] = [];
+    for (let i = -12; i <= 12; i += 3) {
+      let hour = Math.floor(currentHour + i);
+      if (hour < 0) hour += 24;
+      if (hour >= 24) hour -= 24;
+
+      const position = ((i + 12) / 24) * 100;
+      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      const ampm = hour < 12 ? 'AM' : 'PM';
+
+      markers.push(
+        <div
+          key={`marker-${i}`}
+          className="hour-marker"
+          style={{ left: `${position}%` }}
+        >
+          <span>{displayHour}{ampm}</span>
+        </div>
+      );
+    }
+    return markers;
+  };
+
+  return (
+    <div className="activity-timeline-container">
+      <div className="timeline-header">
+        <span className="timeline-label-text">
+          {activeActivity?.name || currentActivity || "Current Activity"}
+        </span>
+        <span className="timeline-time">
+          {currentTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+        </span>
+      </div>
+      <div className="timeline-wrapper" ref={timelineRef}>
+        <div className="timeline-fade-left" />
+        <div className="timeline-fade-right" />
+        <div className="timeline-track">
+          {renderActivities()}
+          {/* Current time indicator */}
+          <div className="current-time-indicator" style={{ left: '50%' }}>
+            <div className="indicator-line" />
+            <div className="indicator-dot" />
+          </div>
+        </div>
+        <div className="timeline-hours">
+          {renderHourMarkers()}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Browseless = () => {
   const [personaDescription, setPersonaDescription] = useState("");
   const [persona, setPersona] = useState<Persona | null>(null);
   const [generating, setGenerating] = useState(false);
   const [simulationState, setSimulationState] = useState<SimulationState>("idle");
-  const [emailPassword, setEmailPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [simulationStatus, setSimulationStatus] = useState<SimulationStatus | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -180,7 +456,8 @@ const Browseless = () => {
       try {
         const personaData = JSON.parse(savedPersona);
         setPersona(personaData);
-        setEmailPassword(personaData.credentials?.email_password || "");
+        setEmail(personaData.email || "");
+        setPassword(personaData.credentials?.email_password || "");
       } catch (e) {
         console.error("Failed to load persona", e);
       }
@@ -246,8 +523,8 @@ const Browseless = () => {
 
 Include these exact fields:
 - demographics: {age (number), gender (string), location (string)}
-- email: generate a unique protonmail.com address
-- schedule: {wake_time (e.g. "7:00 AM"), sleep_time, work_hours (optional), meals (array of times), bathroom_breaks (number per day)}
+- email: leave as empty string ""
+- schedule: {wake_time (e.g. "7:00 AM"), sleep_time, work_hours (optional, e.g. "9:00 AM - 5:00 PM"), meals (array of times like ["7:30 AM", "12:00 PM", "6:30 PM"]), bathroom_breaks (number per day)}
 - interests: array of hobbies/interests
 - browsing_habits: {favorite_sites (array), session_length_minutes (number), search_patterns (array of typical searches)}
 - personality_traits: array of traits (e.g. "curious", "impatient")
@@ -283,7 +560,12 @@ Output ONLY valid JSON, no markdown or explanation.`
 
   const downloadPersona = () => {
     if (!persona) return;
-    const dataStr = JSON.stringify(persona, null, 2);
+    const personaWithCreds = {
+      ...persona,
+      email: email,
+      credentials: { email_password: password },
+    };
+    const dataStr = JSON.stringify(personaWithCreds, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -303,6 +585,8 @@ Output ONLY valid JSON, no markdown or explanation.`
       try {
         const personaData = JSON.parse(e.target?.result as string);
         setPersona(personaData);
+        setEmail(personaData.email || "");
+        setPassword(personaData.credentials?.email_password || "");
         localStorage.setItem("persona", JSON.stringify(personaData));
         AntdMessage.success("Persona uploaded successfully");
       } catch (error) {
@@ -321,8 +605,9 @@ Output ONLY valid JSON, no markdown or explanation.`
 
     const personaWithCreds = {
       ...persona,
+      email: email,
       credentials: {
-        email_password: emailPassword,
+        email_password: password,
       },
     };
 
@@ -416,76 +701,44 @@ Output ONLY valid JSON, no markdown or explanation.`
                   </div>
                 </div>
                 <div className="persona-card-body">
-                  <div className="persona-info-grid">
-                    <div className="persona-info-item">
-                      <UserIcon />
-                      <div className="persona-info-content">
-                        <div className="persona-info-label">Demographics</div>
-                        <div className="persona-info-value">
-                          {persona.demographics.age}y/o {persona.demographics.gender}, {persona.demographics.location}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="persona-info-item">
-                      <MailIcon />
-                      <div className="persona-info-content">
-                        <div className="persona-info-label">Email</div>
-                        <div className="persona-info-value">{persona.email}</div>
-                      </div>
-                    </div>
-
-                    <div className="persona-info-item">
-                      <ClockIcon />
-                      <div className="persona-info-content">
-                        <div className="persona-info-label">Schedule</div>
-                        <div className="persona-info-value">
-                          {persona.schedule.wake_time} - {persona.schedule.sleep_time}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="persona-info-item">
-                      <HeartIcon />
-                      <div className="persona-info-content">
-                        <div className="persona-info-label">Interests</div>
-                        <div className="tag-list">
-                          {persona.interests.slice(0, 4).map((interest, i) => (
-                            <span key={i} className="tag">{interest}</span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="persona-info-item">
-                      <GlobeIcon />
-                      <div className="persona-info-content">
-                        <div className="persona-info-label">Favorite Sites</div>
-                        <div className="persona-info-value">
-                          {persona.browsing_habits.favorite_sites.slice(0, 3).join(", ")}
-                        </div>
-                      </div>
+                  {/* Demographics */}
+                  <div className="info-section">
+                    <div className="info-section-label">Demographics</div>
+                    <div className="info-section-value">
+                      {persona.demographics.age}y/o {persona.demographics.gender}, {persona.demographics.location}
                     </div>
                   </div>
 
-                  {/* Credential Input */}
-                  <div className="credential-input-group">
-                    <label className="credential-label">
-                      <LockIcon />
-                      Email Password (Optional)
-                    </label>
+                  {/* Email Input */}
+                  <div className="credential-field">
+                    <label className="credential-field-label">Email Address</label>
+                    <input
+                      type="email"
+                      className="credential-field-input"
+                      placeholder="Enter email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Password Input */}
+                  <div className="credential-field">
+                    <label className="credential-field-label">Password</label>
                     <input
                       type="password"
-                      className="credential-input"
-                      placeholder="For email simulation"
-                      value={emailPassword}
-                      onChange={(e) => setEmailPassword(e.target.value)}
+                      className="credential-field-input"
+                      placeholder="Enter password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
                     />
-                    <div className="credential-note">
-                      <AlertIcon />
-                      Stored locally only
-                    </div>
+                    <div className="credential-field-note">Stored locally only</div>
                   </div>
+
+                  {/* Activity Timeline */}
+                  <ActivityTimeline
+                    persona={persona}
+                    currentActivity={simulationStatus?.activity}
+                  />
                 </div>
               </div>
 

@@ -91,6 +91,12 @@ body {
 .browseless-logo-icon {
   width: 32px;
   height: 32px;
+  flex-shrink: 0;
+}
+
+.browseless-logo-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .browseless-logo-text {
@@ -160,10 +166,16 @@ body {
 }
 
 .empty-state-icon {
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   margin-bottom: 20px;
+  color: var(--accent-primary);
   opacity: 0.6;
+}
+
+.empty-state-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .empty-state-title {
@@ -181,60 +193,12 @@ body {
   line-height: 1.6;
 }
 
-/* Message Bubbles */
-.message {
-  display: flex;
-  gap: 12px;
-  max-width: 100%;
-}
-
-.message-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent-secondary);
-}
-
-.message-avatar svg {
-  width: 18px;
-  height: 18px;
-  color: var(--accent-primary);
-}
-
-.message-content {
-  flex: 1;
-  padding: 12px 16px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  box-shadow: var(--shadow-sm);
-}
-
-.message.user .message-content {
-  background: var(--accent-primary);
-  color: white;
-  border-color: transparent;
-}
-
-.message.assistant .message-avatar {
-  background: linear-gradient(135deg, #DA7756 0%, #C56747 100%);
-}
-
-.message.assistant .message-avatar svg {
-  color: white;
-}
-
 /* Status Card */
 .status-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   padding: 16px;
-  margin: 12px 20px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -342,6 +306,7 @@ body {
   line-height: 1.6;
   color: var(--text-primary);
   outline: none;
+  box-sizing: border-box;
 }
 
 .prompt-textarea::placeholder {
@@ -444,7 +409,6 @@ body {
   background: var(--bg-secondary);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  margin: 12px 20px;
   overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
@@ -473,60 +437,67 @@ body {
   padding: 16px;
 }
 
-.persona-info-grid {
-  display: grid;
-  gap: 12px;
+/* Info Section */
+.info-section {
+  margin-bottom: 16px;
 }
 
-.persona-info-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.persona-info-icon {
-  width: 20px;
-  height: 20px;
-  color: var(--accent-primary);
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.persona-info-content {
-  flex: 1;
-}
-
-.persona-info-label {
+.info-section-label {
   font-size: 11px;
   font-weight: 500;
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
-.persona-info-value {
-  font-size: 13px;
+.info-section-value {
+  font-size: 14px;
   color: var(--text-primary);
-}
-
-/* Tags */
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  background: var(--accent-secondary);
-  color: var(--text-secondary);
-  border-radius: 100px;
-  font-size: 12px;
   font-weight: 500;
+}
+
+/* Credential Fields */
+.credential-field {
+  margin-bottom: 12px;
+}
+
+.credential-field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.credential-field-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  transition: border-color var(--transition-fast);
+  box-sizing: border-box;
+}
+
+.credential-field-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.credential-field-input::placeholder {
+  color: var(--text-placeholder);
+}
+
+.credential-field-note {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
 }
 
 /* Icon Button Small */
@@ -573,7 +544,7 @@ body {
 .loading-dots span {
   width: 6px;
   height: 6px;
-  background: var(--accent-primary);
+  background: white;
   border-radius: 50%;
   animation: loadingDot 1.4s infinite ease-in-out both;
 }
@@ -590,84 +561,163 @@ body {
   }
 }
 
-/* Tooltip Styles */
-.tooltip {
-  position: relative;
-}
-
-.tooltip::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 6px 10px;
-  background: var(--text-primary);
-  color: white;
-  font-size: 12px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--transition-fast);
-  margin-bottom: 6px;
-}
-
-.tooltip:hover::after {
-  opacity: 1;
-}
-
 /* File Input Hidden */
 .file-input-hidden {
   display: none;
 }
 
-/* Credential Input */
-.credential-input-group {
-  margin-top: 12px;
-  padding-top: 12px;
+/* ================================
+   Activity Timeline Styles
+   ================================ */
+
+.activity-timeline-container {
+  margin-top: 16px;
+  padding-top: 16px;
   border-top: 1px solid var(--border-light);
 }
 
-.credential-label {
+.timeline-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.timeline-label-text {
   font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-}
-
-.credential-label svg {
-  width: 14px;
-  height: 14px;
-}
-
-.credential-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-family: inherit;
-  background: var(--bg-input);
+  font-weight: 600;
   color: var(--text-primary);
-  transition: border-color var(--transition-fast);
 }
 
-.credential-input:focus {
-  outline: none;
-  border-color: var(--border-focus);
-}
-
-.credential-note {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 6px;
+.timeline-time {
   font-size: 11px;
   color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.timeline-wrapper {
+  position: relative;
+  height: 80px;
+  overflow: hidden;
+}
+
+/* Fade gradients on edges */
+.timeline-fade-left,
+.timeline-fade-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10%;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.timeline-fade-left {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-secondary) 0%, transparent 100%);
+}
+
+.timeline-fade-right {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-secondary) 0%, transparent 100%);
+}
+
+.timeline-track {
+  position: relative;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  margin-top: 30px;
+}
+
+.timeline-segment {
+  position: absolute;
+  height: 100%;
+  border-radius: 3px;
+  transition: opacity 0.3s ease;
+}
+
+/* Current time indicator */
+.current-time-indicator {
+  position: absolute;
+  top: -8px;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
+.indicator-line {
+  width: 2px;
+  height: 22px;
+  background: var(--accent-primary);
+  margin: 0 auto;
+}
+
+.indicator-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  margin: 0 auto;
+  margin-top: -1px;
+  box-shadow: 0 0 0 2px var(--bg-secondary);
+}
+
+/* Timeline labels */
+.timeline-label {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.timeline-label.label-up {
+  bottom: 100%;
+  margin-bottom: 6px;
+  flex-direction: column-reverse;
+}
+
+.timeline-label.label-down {
+  top: 100%;
+  margin-top: 6px;
+}
+
+.label-line {
+  width: 1px;
+  height: 12px;
+}
+
+.label-text {
+  font-size: 9px;
+  font-weight: 500;
+  white-space: nowrap;
+  padding: 2px 4px;
+  background: var(--bg-secondary);
+  border-radius: 2px;
+}
+
+.timeline-label.label-up .label-text {
+  margin-bottom: 2px;
+}
+
+.timeline-label.label-down .label-text {
+  margin-top: 2px;
+}
+
+/* Hour markers */
+.timeline-hours {
+  position: relative;
+  margin-top: 8px;
+  height: 16px;
+}
+
+.hour-marker {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--text-tertiary);
+  font-weight: 500;
 }
 
 /* Responsive */
@@ -675,5 +725,15 @@ body {
   .input-container {
     height: 35vh;
     min-height: 120px;
+  }
+}
+
+@media (max-width: 400px) {
+  .timeline-label .label-text {
+    font-size: 8px;
+  }
+
+  .hour-marker span {
+    font-size: 8px;
   }
 }
