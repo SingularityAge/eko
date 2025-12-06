@@ -183,6 +183,16 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
       });
 
       const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error.message || "API returned an error");
+      }
+
+      if (!data.choices || !data.choices[0]) {
+        console.error("Unexpected API response:", data);
+        throw new Error("Unexpected API response format. Please check your API key and try again.");
+      }
+
       const content = data.choices[0]?.message?.content;
 
       if (!content) {
@@ -495,57 +505,75 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
             </Paragraph>
           )}
 
-          {simulationStatus && isPlaying && (
+          {isPlaying && (
             <Card
               size="small"
               style={{
                 marginTop: 12,
-                backgroundColor: darkMode ? "#333" : "#f0f0f0",
-                borderColor: "#52c41a",
+                backgroundColor: darkMode ? "#1f1f1f" : "#f5f5f5",
+                borderLeft: `4px solid ${simulationStatus ? "#52c41a" : "#999"}`,
               }}
             >
               <Space direction="vertical" size="small" style={{ width: "100%" }}>
-                <div>
-                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
-                    Status:{" "}
-                  </Text>
-                  <Text style={{ color: "#52c41a" }}>
-                    {simulationStatus.status}
-                  </Text>
-                </div>
-                <div>
-                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
-                    Browsing:{" "}
-                  </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>
-                    {simulationStatus.site}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    backgroundColor: "#52c41a",
+                    animation: "pulse 2s infinite"
+                  }} />
+                  <Text strong style={{ color: darkMode ? "#fff" : "#000", fontSize: 13 }}>
+                    Simulation Active
                   </Text>
                 </div>
-                <div>
-                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
-                    Activity:{" "}
-                  </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>
-                    {simulationStatus.activity}
-                  </Text>
-                </div>
-                <div>
-                  <Text strong style={{ color: darkMode ? "#fff" : "#000" }}>
-                    Energy:{" "}
-                  </Text>
-                  <Text
-                    style={{
-                      color:
-                        simulationStatus.energy > 50
-                          ? "#52c41a"
-                          : simulationStatus.energy > 30
-                          ? "#faad14"
-                          : "#f5222d",
-                    }}
-                  >
-                    {simulationStatus.energy.toFixed(0)}%
-                  </Text>
-                </div>
+                {simulationStatus && (
+                  <>
+                    <div style={{ paddingLeft: 16, opacity: 0.8 }}>
+                      <Text style={{ color: darkMode ? "#aaa" : "#666", fontSize: 12 }}>
+                        {simulationStatus.activity}
+                      </Text>
+                    </div>
+                    {simulationStatus.site !== "N/A" && (
+                      <div style={{ paddingLeft: 16, opacity: 0.7 }}>
+                        <Text style={{ color: darkMode ? "#888" : "#888", fontSize: 11 }}>
+                          {simulationStatus.site.length > 40
+                            ? simulationStatus.site.substring(0, 40) + "..."
+                            : simulationStatus.site}
+                        </Text>
+                      </div>
+                    )}
+                    <div style={{ paddingLeft: 16, marginTop: 4 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{
+                          flex: 1,
+                          height: 4,
+                          backgroundColor: darkMode ? "#333" : "#ddd",
+                          borderRadius: 2,
+                          overflow: "hidden"
+                        }}>
+                          <div style={{
+                            width: `${simulationStatus.energy}%`,
+                            height: "100%",
+                            backgroundColor: simulationStatus.energy > 50
+                              ? "#52c41a"
+                              : simulationStatus.energy > 30
+                              ? "#faad14"
+                              : "#f5222d",
+                            transition: "width 0.3s ease"
+                          }} />
+                        </div>
+                        <Text style={{
+                          fontSize: 11,
+                          color: darkMode ? "#888" : "#888",
+                          minWidth: 35
+                        }}>
+                          {simulationStatus.energy.toFixed(0)}%
+                        </Text>
+                      </div>
+                    </div>
+                  </>
+                )}
               </Space>
             </Card>
           )}

@@ -435,6 +435,18 @@ function startSimulationLoop(): void {
   }
 
   let emailLoginAttempted = false;
+  let lastStatusMessage = "";
+
+  const sendStatusUpdate = (status: string, site: string, activity: string, energy: number) => {
+    const statusKey = `${status}:${activity}`;
+    if (statusKey !== lastStatusMessage) {
+      lastStatusMessage = statusKey;
+      chrome.runtime.sendMessage({
+        type: "simulation_status",
+        data: { status, site, activity, energy },
+      });
+    }
+  };
 
   simulationInterval = setInterval(async () => {
     if (!isSimulationRunning || !personaEngine) {
@@ -449,33 +461,15 @@ function startSimulationLoop(): void {
       personaEngine.updateEnergyLevel();
 
       if (activity?.activity === "sleep") {
-        printLog("Persona is sleeping", "info");
-        if (activityTracker) {
+        sendStatusUpdate("sleeping", "N/A", activity.activity, brain?.state.energyLevel || 0);
+        if (activityTracker && lastStatusMessage.startsWith("sleeping:")) {
           await activityTracker.trackActivity('idle', undefined, 'Sleeping');
         }
-        chrome.runtime.sendMessage({
-          type: "simulation_status",
-          data: {
-            status: "sleeping",
-            site: "N/A",
-            activity: activity.activity,
-            energy: brain?.state.energyLevel || 0,
-          },
-        });
         return;
       }
 
       if (activity?.activity.includes("bathroom") || activity?.activity.includes("meal")) {
-        printLog(`Persona is on ${activity.activity}`, "info");
-        chrome.runtime.sendMessage({
-          type: "simulation_status",
-          data: {
-            status: "break",
-            site: "N/A",
-            activity: activity.activity,
-            energy: brain?.state.energyLevel || 0,
-          },
-        });
+        sendStatusUpdate("break", "N/A", activity.activity, brain?.state.energyLevel || 0);
         await new Promise(resolve => setTimeout(resolve, 5 * 60 * 1000));
         return;
       }
@@ -528,15 +522,7 @@ function startSimulationLoop(): void {
           }, 2000);
         }
 
-        chrome.runtime.sendMessage({
-          type: "simulation_status",
-          data: {
-            status: "browsing",
-            site: randomSite,
-            activity: activity?.activity,
-            energy: brain?.state.energyLevel || 0,
-          },
-        });
+        sendStatusUpdate("browsing", randomSite, activity?.activity || "browsing", brain?.state.energyLevel || 0);
       }
 
       if (Math.random() < 0.2 && tabs.length > 0) {
@@ -565,7 +551,7 @@ function startSimulationLoop(): void {
     } catch (error) {
       console.error("Simulation loop error:", error);
     }
-  }, Math.random() * 4000 + 1000);
+  }, Math.random() * 20000 + 30000);
 }
 
 async function initializePersonaTraits(): Promise<void> {
