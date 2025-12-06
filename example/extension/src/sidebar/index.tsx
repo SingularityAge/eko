@@ -136,7 +136,7 @@ const parseTimeToHours = (timeStr: string): number => {
   return hours + minutes / 60;
 };
 
-// Generate activities from persona schedule with 38-62% browsing time spread throughout the day
+// Generate activities from persona schedule with 38-62% browsing time spread randomly throughout the day
 const generateActivities = (persona: Persona): Activity[] => {
   const activities: Activity[] = [];
   const wakeHour = parseTimeToHours(persona.schedule.wake_time);
@@ -145,10 +145,26 @@ const generateActivities = (persona: Persona): Activity[] => {
   // Calculate awake hours
   const awakeHours = sleepHour > wakeHour ? sleepHour - wakeHour : (24 - wakeHour) + sleepHour;
 
-  // Target browsing time: 38-62% of awake hours (use persona hash for consistency)
-  const personaHash = (persona.demographics.age + persona.demographics.location.length) % 25;
+  // Target browsing time: 38-62% of awake hours (use persona hash for consistency but varied)
+  const seed1 = persona.demographics.age * 7;
+  const seed2 = persona.demographics.location.length * 13;
+  const seed3 = persona.interests?.length || 3;
+  const personaHash = (seed1 + seed2 + seed3) % 25;
   const browsingPercent = 0.38 + (personaHash / 100); // 38-62%
   const totalBrowsingHours = awakeHours * browsingPercent;
+
+  // Create random-ish distribution weights (varies by persona)
+  const weights = [
+    0.12 + ((seed1 % 10) / 100),  // morning: 12-21%
+    0.08 + ((seed2 % 8) / 100),   // mid-morning: 8-15%
+    0.15 + ((seed3 % 12) / 100),  // late-morning: 15-26%
+    0.18 + (((seed1 + seed2) % 10) / 100), // early-afternoon: 18-27%
+    0.10 + ((seed2 % 6) / 100),   // late-afternoon: 10-15%
+    0.12 + ((seed3 % 8) / 100),   // evening: 12-19%
+    0.05 + (((seed1 * seed3) % 5) / 100),  // during-other-activities: 5-9%
+  ];
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  const normalizedWeights = weights.map(w => w / totalWeight);
 
   // Sleep (previous night until wake)
   activities.push({
@@ -158,12 +174,22 @@ const generateActivities = (persona: Persona): Activity[] => {
     color: "#6B7280"
   });
 
-  // Morning routine
+  // Morning routine with quick phone check
+  const morningRoutineEnd = wakeHour + 0.4;
   activities.push({
     name: "Morning Routine",
     startHour: wakeHour,
-    endHour: wakeHour + 0.5,
+    endHour: morningRoutineEnd,
     color: "#8B5CF6"
+  });
+
+  // Quick morning browsing (checking news/socials)
+  const quickMorningBrowse = totalBrowsingHours * normalizedWeights[6] * 0.3;
+  activities.push({
+    name: "Browsing",
+    startHour: morningRoutineEnd,
+    endHour: morningRoutineEnd + quickMorningBrowse,
+    color: "#10B981"
   });
 
   // Breakfast
@@ -171,13 +197,22 @@ const generateActivities = (persona: Persona): Activity[] => {
   activities.push({
     name: "Breakfast",
     startHour: breakfastTime,
-    endHour: breakfastTime + 0.5,
+    endHour: breakfastTime + 0.35,
     color: "#F59E0B"
   });
 
-  // Morning browsing block (after breakfast)
-  const morningBrowseStart = breakfastTime + 0.5;
-  const morningBrowseHours = totalBrowsingHours * 0.25; // 25% of browsing in morning
+  // Browsing during/after breakfast
+  const breakfastBrowse = totalBrowsingHours * normalizedWeights[6] * 0.4;
+  activities.push({
+    name: "Browsing",
+    startHour: breakfastTime + 0.35,
+    endHour: breakfastTime + 0.35 + breakfastBrowse,
+    color: "#10B981"
+  });
+
+  // Morning browsing block
+  const morningBrowseStart = breakfastTime + 0.35 + breakfastBrowse;
+  const morningBrowseHours = totalBrowsingHours * normalizedWeights[0];
   activities.push({
     name: "Browsing",
     startHour: morningBrowseStart,
@@ -185,22 +220,38 @@ const generateActivities = (persona: Persona): Activity[] => {
     color: "#10B981"
   });
 
-  // Mid-morning activity break
+  // Mid-morning break (with short browse)
   const midMorningStart = morningBrowseStart + morningBrowseHours;
   activities.push({
     name: "Break",
     startHour: midMorningStart,
-    endHour: midMorningStart + 0.5,
+    endHour: midMorningStart + 0.25,
     color: "#8B5CF6"
   });
 
-  // Late morning browsing
-  const lateMorningBrowseStart = midMorningStart + 0.5;
-  const lateMorningBrowseHours = totalBrowsingHours * 0.2; // 20% of browsing
+  const midMorningBrowse = totalBrowsingHours * normalizedWeights[1];
   activities.push({
     name: "Browsing",
-    startHour: lateMorningBrowseStart,
-    endHour: lateMorningBrowseStart + lateMorningBrowseHours,
+    startHour: midMorningStart + 0.25,
+    endHour: midMorningStart + 0.25 + midMorningBrowse,
+    color: "#10B981"
+  });
+
+  // Late morning - mix of activity and browsing
+  const lateMorningActivityStart = midMorningStart + 0.25 + midMorningBrowse;
+  const shortActivity = 0.3 + ((seed2 % 3) / 10);
+  activities.push({
+    name: "Errands",
+    startHour: lateMorningActivityStart,
+    endHour: lateMorningActivityStart + shortActivity,
+    color: "#8B5CF6"
+  });
+
+  const lateMorningBrowse = totalBrowsingHours * normalizedWeights[2];
+  activities.push({
+    name: "Browsing",
+    startHour: lateMorningActivityStart + shortActivity,
+    endHour: lateMorningActivityStart + shortActivity + lateMorningBrowse,
     color: "#10B981"
   });
 
@@ -209,51 +260,72 @@ const generateActivities = (persona: Persona): Activity[] => {
   activities.push({
     name: "Lunch",
     startHour: lunchTime,
-    endHour: lunchTime + 0.75,
+    endHour: lunchTime + 0.5,
     color: "#F59E0B"
   });
 
+  // Quick browse during lunch break
+  const lunchBrowse = totalBrowsingHours * normalizedWeights[6] * 0.3;
+  activities.push({
+    name: "Browsing",
+    startHour: lunchTime + 0.5,
+    endHour: lunchTime + 0.5 + lunchBrowse,
+    color: "#10B981"
+  });
+
   // Early afternoon browsing
-  const earlyAfternoonStart = lunchTime + 0.75;
-  const earlyAfternoonBrowseHours = totalBrowsingHours * 0.2; // 20% of browsing
+  const earlyAfternoonStart = lunchTime + 0.5 + lunchBrowse;
+  const earlyAfternoonBrowse = totalBrowsingHours * normalizedWeights[3];
   activities.push({
     name: "Browsing",
     startHour: earlyAfternoonStart,
-    endHour: earlyAfternoonStart + earlyAfternoonBrowseHours,
+    endHour: earlyAfternoonStart + earlyAfternoonBrowse,
     color: "#10B981"
   });
 
   // Afternoon break/exercise
-  const afternoonBreakStart = earlyAfternoonStart + earlyAfternoonBrowseHours;
+  const afternoonBreakStart = earlyAfternoonStart + earlyAfternoonBrowse;
+  const exerciseDuration = 0.5 + ((seed1 % 4) / 10);
   activities.push({
     name: "Exercise",
     startHour: afternoonBreakStart,
-    endHour: afternoonBreakStart + 0.75,
+    endHour: afternoonBreakStart + exerciseDuration,
     color: "#EF4444"
   });
 
   // Late afternoon browsing
-  const lateAfternoonStart = afternoonBreakStart + 0.75;
-  const lateAfternoonBrowseHours = totalBrowsingHours * 0.2; // 20% of browsing
+  const lateAfternoonStart = afternoonBreakStart + exerciseDuration;
+  const lateAfternoonBrowse = totalBrowsingHours * normalizedWeights[4];
   activities.push({
     name: "Browsing",
     startHour: lateAfternoonStart,
-    endHour: lateAfternoonStart + lateAfternoonBrowseHours,
+    endHour: lateAfternoonStart + lateAfternoonBrowse,
     color: "#10B981"
   });
 
-  // Dinner
+  // Pre-dinner activity
+  const preDinnerStart = lateAfternoonStart + lateAfternoonBrowse;
   const dinnerTime = persona.schedule.meals[2] ? parseTimeToHours(persona.schedule.meals[2]) : 18;
+  if (dinnerTime > preDinnerStart + 0.3) {
+    activities.push({
+      name: "Leisure",
+      startHour: preDinnerStart,
+      endHour: dinnerTime,
+      color: "#EC4899"
+    });
+  }
+
+  // Dinner
   activities.push({
     name: "Dinner",
     startHour: dinnerTime,
-    endHour: dinnerTime + 1,
+    endHour: dinnerTime + 0.75,
     color: "#F59E0B"
   });
 
-  // Evening browsing (remaining ~15%)
-  const eveningBrowseStart = dinnerTime + 1;
-  const eveningBrowseHours = totalBrowsingHours * 0.15; // 15% of browsing
+  // Evening browsing
+  const eveningBrowseStart = dinnerTime + 0.75;
+  const eveningBrowseHours = totalBrowsingHours * normalizedWeights[5];
   activities.push({
     name: "Browsing",
     startHour: eveningBrowseStart,
@@ -261,14 +333,41 @@ const generateActivities = (persona: Persona): Activity[] => {
     color: "#10B981"
   });
 
-  // Evening leisure/wind down
+  // Evening leisure with occasional browsing
   const leisureStart = eveningBrowseStart + eveningBrowseHours;
+  const leisureMidpoint = leisureStart + (sleepHour - leisureStart) / 2;
+
   activities.push({
     name: "Leisure",
     startHour: leisureStart,
-    endHour: sleepHour,
+    endHour: leisureMidpoint,
     color: "#EC4899"
   });
+
+  // Late night quick browse
+  const lateNightBrowse = totalBrowsingHours * normalizedWeights[6] * 0.3;
+  if (leisureMidpoint + lateNightBrowse < sleepHour - 0.25) {
+    activities.push({
+      name: "Browsing",
+      startHour: leisureMidpoint,
+      endHour: leisureMidpoint + lateNightBrowse,
+      color: "#10B981"
+    });
+
+    activities.push({
+      name: "Leisure",
+      startHour: leisureMidpoint + lateNightBrowse,
+      endHour: sleepHour,
+      color: "#EC4899"
+    });
+  } else {
+    activities.push({
+      name: "Leisure",
+      startHour: leisureMidpoint,
+      endHour: sleepHour,
+      color: "#EC4899"
+    });
+  }
 
   // Sleep (tonight)
   activities.push({
