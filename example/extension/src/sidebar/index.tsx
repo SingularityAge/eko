@@ -136,11 +136,19 @@ const parseTimeToHours = (timeStr: string): number => {
   return hours + minutes / 60;
 };
 
-// Generate activities from persona schedule
+// Generate activities from persona schedule with 38-62% browsing time spread throughout the day
 const generateActivities = (persona: Persona): Activity[] => {
   const activities: Activity[] = [];
   const wakeHour = parseTimeToHours(persona.schedule.wake_time);
   const sleepHour = parseTimeToHours(persona.schedule.sleep_time);
+
+  // Calculate awake hours
+  const awakeHours = sleepHour > wakeHour ? sleepHour - wakeHour : (24 - wakeHour) + sleepHour;
+
+  // Target browsing time: 38-62% of awake hours (use persona hash for consistency)
+  const personaHash = (persona.demographics.age + persona.demographics.location.length) % 25;
+  const browsingPercent = 0.38 + (personaHash / 100); // 38-62%
+  const totalBrowsingHours = awakeHours * browsingPercent;
 
   // Sleep (previous night until wake)
   activities.push({
@@ -167,28 +175,34 @@ const generateActivities = (persona: Persona): Activity[] => {
     color: "#F59E0B"
   });
 
-  // Work hours if defined
-  if (persona.schedule.work_hours) {
-    const workMatch = persona.schedule.work_hours.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM)?)\s*-\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM)?)/i);
-    if (workMatch) {
-      const workStart = parseTimeToHours(workMatch[1]);
-      const workEnd = parseTimeToHours(workMatch[2]);
-      activities.push({
-        name: "Work",
-        startHour: workStart,
-        endHour: workEnd,
-        color: "#3B82F6"
-      });
-    }
-  } else {
-    // Default work hours
-    activities.push({
-      name: "Browsing",
-      startHour: breakfastTime + 0.5,
-      endHour: 12,
-      color: "#10B981"
-    });
-  }
+  // Morning browsing block (after breakfast)
+  const morningBrowseStart = breakfastTime + 0.5;
+  const morningBrowseHours = totalBrowsingHours * 0.25; // 25% of browsing in morning
+  activities.push({
+    name: "Browsing",
+    startHour: morningBrowseStart,
+    endHour: morningBrowseStart + morningBrowseHours,
+    color: "#10B981"
+  });
+
+  // Mid-morning activity break
+  const midMorningStart = morningBrowseStart + morningBrowseHours;
+  activities.push({
+    name: "Break",
+    startHour: midMorningStart,
+    endHour: midMorningStart + 0.5,
+    color: "#8B5CF6"
+  });
+
+  // Late morning browsing
+  const lateMorningBrowseStart = midMorningStart + 0.5;
+  const lateMorningBrowseHours = totalBrowsingHours * 0.2; // 20% of browsing
+  activities.push({
+    name: "Browsing",
+    startHour: lateMorningBrowseStart,
+    endHour: lateMorningBrowseStart + lateMorningBrowseHours,
+    color: "#10B981"
+  });
 
   // Lunch
   const lunchTime = persona.schedule.meals[1] ? parseTimeToHours(persona.schedule.meals[1]) : 12;
@@ -199,11 +213,32 @@ const generateActivities = (persona: Persona): Activity[] => {
     color: "#F59E0B"
   });
 
-  // Afternoon activities
+  // Early afternoon browsing
+  const earlyAfternoonStart = lunchTime + 0.75;
+  const earlyAfternoonBrowseHours = totalBrowsingHours * 0.2; // 20% of browsing
   activities.push({
     name: "Browsing",
-    startHour: lunchTime + 0.75,
-    endHour: 17,
+    startHour: earlyAfternoonStart,
+    endHour: earlyAfternoonStart + earlyAfternoonBrowseHours,
+    color: "#10B981"
+  });
+
+  // Afternoon break/exercise
+  const afternoonBreakStart = earlyAfternoonStart + earlyAfternoonBrowseHours;
+  activities.push({
+    name: "Exercise",
+    startHour: afternoonBreakStart,
+    endHour: afternoonBreakStart + 0.75,
+    color: "#EF4444"
+  });
+
+  // Late afternoon browsing
+  const lateAfternoonStart = afternoonBreakStart + 0.75;
+  const lateAfternoonBrowseHours = totalBrowsingHours * 0.2; // 20% of browsing
+  activities.push({
+    name: "Browsing",
+    startHour: lateAfternoonStart,
+    endHour: lateAfternoonStart + lateAfternoonBrowseHours,
     color: "#10B981"
   });
 
@@ -216,10 +251,21 @@ const generateActivities = (persona: Persona): Activity[] => {
     color: "#F59E0B"
   });
 
-  // Evening leisure
+  // Evening browsing (remaining ~15%)
+  const eveningBrowseStart = dinnerTime + 1;
+  const eveningBrowseHours = totalBrowsingHours * 0.15; // 15% of browsing
+  activities.push({
+    name: "Browsing",
+    startHour: eveningBrowseStart,
+    endHour: eveningBrowseStart + eveningBrowseHours,
+    color: "#10B981"
+  });
+
+  // Evening leisure/wind down
+  const leisureStart = eveningBrowseStart + eveningBrowseHours;
   activities.push({
     name: "Leisure",
-    startHour: dinnerTime + 1,
+    startHour: leisureStart,
     endHour: sleepHour,
     color: "#EC4899"
   });

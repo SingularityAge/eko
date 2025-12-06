@@ -272,8 +272,9 @@ const OptionsPage = () => {
               <LogoIcon />
             </div>
             <div>
-              <h1 style={styles.title}>Browseless</h1>
-              <p style={styles.subtitle}>Settings</p>
+              <h1 style={styles.title}>
+                Browseless <span style={styles.titleLight}>Settings</span>
+              </h1>
             </div>
           </div>
         </div>
@@ -467,13 +468,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '24px',
     fontWeight: '600',
     color: '#1A1915',
-    margin: '0 0 2px 0',
+    margin: 0,
     letterSpacing: '-0.5px',
   },
-  subtitle: {
-    fontSize: '14px',
-    color: '#6B6560',
-    margin: 0,
+  titleLight: {
+    fontWeight: '300',
+    color: '#9A948D',
   },
   section: {
     backgroundColor: '#FFFFFF',
@@ -492,7 +492,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '40px',
     height: '40px',
     borderRadius: '10px',
-    backgroundColor: '#F0EDE8',
+    backgroundColor: 'transparent',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
