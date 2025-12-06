@@ -540,7 +540,7 @@ function startSimulationLoop(): void {
           try {
             const response = await chrome.tabs.sendMessage(randomTab.id, {
               type: "checkDistraction",
-            });
+            }) as unknown as { url?: string } | undefined;
 
             if (response?.url) {
               await chrome.tabs.create({ url: response.url, active: false });

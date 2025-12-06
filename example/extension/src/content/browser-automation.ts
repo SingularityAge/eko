@@ -52,7 +52,7 @@ export class BrowserAutomation {
     window.location.href = url;
   }
 
-  private async scroll(amount: number = 300): Promise<void> {
+  async scroll(amount: number = 300): Promise<void> {
     const duration = this.randomDelay(500, 2000);
     const start = window.scrollY;
     const startTime = Date.now();
