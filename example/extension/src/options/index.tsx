@@ -37,66 +37,82 @@ const CheckIcon = () => (
   </svg>
 );
 
-const ExternalLinkIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-    <polyline points="15 3 21 3 21 9"/>
-    <line x1="10" y1="14" x2="21" y2="3"/>
-  </svg>
-);
-
 const ChevronDownIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="6 9 12 15 18 9"/>
   </svg>
 );
 
-// Agent configuration
+// Small eye icon for vision capability
+const VisionIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="#DA7756"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ width: '12px', height: '12px', marginLeft: '4px', verticalAlign: 'middle' }}
+  >
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+    <circle cx="12" cy="12" r="3"/>
+  </svg>
+);
+
+// Agent configuration with vision requirement flag
 const agentConfig = [
   {
     id: "plannerModel",
     name: "Planner",
     description: "Plans and breaks down tasks into steps",
     icon: "P",
+    requiresVision: false,
   },
   {
     id: "chatModel",
     name: "Chat",
     description: "Handles conversation and coordinates agents",
     icon: "C",
+    requiresVision: false,
   },
   {
     id: "navigatorModel",
     name: "Navigator",
     description: "Controls browser navigation and interactions",
     icon: "N",
+    requiresVision: true,
   },
   {
     id: "writerModel",
     name: "Writer",
     description: "Writes and saves files to disk",
     icon: "W",
+    requiresVision: false,
   },
 ];
 
-const modelSuggestions = [
-  { value: "anthropic/claude-sonnet-4.5", label: "Claude Sonnet 4.5", recommended: true },
-  { value: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4" },
-  { value: "anthropic/claude-3.7-sonnet", label: "Claude 3.7 Sonnet" },
-  { value: "google/gemini-3-pro", label: "Gemini 3 Pro" },
-  { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { value: "openai/gpt-5.1", label: "GPT-5.1" },
-  { value: "openai/gpt-5", label: "GPT-5" },
-  { value: "openai/gpt-5-mini", label: "GPT-5 Mini" },
-  { value: "openai/gpt-4.1", label: "GPT-4.1" },
-  { value: "openai/o4-mini", label: "O4 Mini" },
-  { value: "openai/gpt-4.1-mini", label: "GPT-4.1 Mini" },
-  { value: "x-ai/grok-4", label: "Grok 4" },
-  { value: "x-ai/grok-4-fast", label: "Grok 4 Fast" },
-];
+interface OpenRouterModel {
+  id: string;
+  name: string;
+  description?: string;
+  pricing?: {
+    prompt: string;
+    completion: string;
+  };
+  context_length?: number;
+  architecture?: {
+    modality?: string;
+    tokenizer?: string;
+    instruct_type?: string;
+  };
+}
+
+interface GroupedModels {
+  [provider: string]: OpenRouterModel[];
+}
 
 const OptionsPage = () => {
-  const defaultModel = "anthropic/claude-sonnet-4.5";
+  const defaultModel = "anthropic/claude-sonnet-4";
 
   const [config, setConfig] = useState({
     apiKey: "",
@@ -110,7 +126,12 @@ const OptionsPage = () => {
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [models, setModels] = useState<OpenRouterModel[]>([]);
+  const [groupedModels, setGroupedModels] = useState<GroupedModels>({});
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
 
+  // Load saved config
   useEffect(() => {
     chrome.storage.sync.get(["llmConfig"], (result) => {
       if (result.llmConfig) {
@@ -124,6 +145,47 @@ const OptionsPage = () => {
         });
       }
     });
+  }, []);
+
+  // Fetch models from OpenRouter
+  useEffect(() => {
+    const fetchModels = async () => {
+      setLoadingModels(true);
+      setModelError(null);
+      try {
+        const response = await fetch("https://openrouter.ai/api/v1/models");
+        if (!response.ok) {
+          throw new Error("Failed to fetch models");
+        }
+        const data = await response.json();
+        const modelList: OpenRouterModel[] = data.data || [];
+
+        // Sort and group by provider
+        const grouped: GroupedModels = {};
+        modelList.forEach((model) => {
+          const provider = model.id.split("/")[0] || "other";
+          if (!grouped[provider]) {
+            grouped[provider] = [];
+          }
+          grouped[provider].push(model);
+        });
+
+        // Sort models within each provider alphabetically
+        Object.keys(grouped).forEach((provider) => {
+          grouped[provider].sort((a, b) => a.name.localeCompare(b.name));
+        });
+
+        setModels(modelList);
+        setGroupedModels(grouped);
+      } catch (error) {
+        console.error("Error fetching models:", error);
+        setModelError("Failed to load models. Please check your connection.");
+      } finally {
+        setLoadingModels(false);
+      }
+    };
+
+    fetchModels();
   }, []);
 
   const handleChange = (field: string, value: string) => {
@@ -162,6 +224,42 @@ const OptionsPage = () => {
 
   const toggleAgent = (agentId: string) => {
     setExpandedAgent(expandedAgent === agentId ? null : agentId);
+  };
+
+  // Get sorted provider names (alphabetically, but put popular ones first)
+  const getSortedProviders = () => {
+    const priorityProviders = ["anthropic", "openai", "google", "meta-llama", "mistralai", "x-ai"];
+    const providers = Object.keys(groupedModels);
+
+    return providers.sort((a, b) => {
+      const aIndex = priorityProviders.indexOf(a);
+      const bIndex = priorityProviders.indexOf(b);
+
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  };
+
+  const formatProviderName = (provider: string) => {
+    const names: Record<string, string> = {
+      "anthropic": "Anthropic",
+      "openai": "OpenAI",
+      "google": "Google",
+      "meta-llama": "Meta",
+      "mistralai": "Mistral AI",
+      "x-ai": "xAI",
+      "cohere": "Cohere",
+      "perplexity": "Perplexity",
+      "deepseek": "DeepSeek",
+      "microsoft": "Microsoft",
+      "databricks": "Databricks",
+      "amazon": "Amazon",
+      "qwen": "Qwen",
+      "nvidia": "NVIDIA",
+    };
+    return names[provider] || provider.charAt(0).toUpperCase() + provider.slice(1);
   };
 
   return (
@@ -221,8 +319,7 @@ const OptionsPage = () => {
             rel="noopener noreferrer"
             style={styles.link}
           >
-            <span>Get your API key at openrouter.ai</span>
-            <ExternalLinkIcon />
+            Get your API key at openrouter.ai
           </a>
         </div>
 
@@ -249,7 +346,10 @@ const OptionsPage = () => {
                   <div style={styles.agentInfo}>
                     <div style={styles.agentIcon}>{agent.icon}</div>
                     <div>
-                      <div style={styles.agentName}>{agent.name}</div>
+                      <div style={styles.agentName}>
+                        {agent.name}
+                        {agent.requiresVision && <VisionIcon />}
+                      </div>
                       <div style={styles.agentDescription}>{agent.description}</div>
                     </div>
                   </div>
@@ -268,31 +368,45 @@ const OptionsPage = () => {
                       style={{
                         ...styles.input,
                         ...(errors[agent.id] ? styles.inputError : {}),
+                        marginBottom: '8px',
                       }}
-                      placeholder="e.g., anthropic/claude-sonnet-4.5"
+                      placeholder="e.g., anthropic/claude-sonnet-4"
                       value={config[agent.id as keyof typeof config]}
                       onChange={(e) => handleChange(agent.id, e.target.value)}
                     />
                     {errors[agent.id] && <span style={styles.errorText}>{errors[agent.id]}</span>}
 
-                    <div style={styles.suggestions}>
-                      <span style={styles.suggestionsLabel}>Quick select:</span>
-                      <div style={styles.suggestionTags}>
-                        {modelSuggestions.slice(0, 5).map((model) => (
-                          <button
-                            key={model.value}
-                            style={{
-                              ...styles.suggestionTag,
-                              ...(config[agent.id as keyof typeof config] === model.value ? styles.suggestionTagActive : {}),
-                            }}
-                            onClick={() => handleChange(agent.id, model.value)}
-                            type="button"
-                          >
-                            {model.label}
-                            {model.recommended && <span style={styles.recommendedBadge}>Recommended</span>}
-                          </button>
-                        ))}
+                    {agent.requiresVision && (
+                      <div style={styles.visionNote}>
+                        <VisionIcon />
+                        <span>This agent benefits from vision-capable models</span>
                       </div>
+                    )}
+
+                    {/* Model selector */}
+                    <div style={styles.modelSelector}>
+                      {loadingModels ? (
+                        <div style={styles.loadingText}>Loading models...</div>
+                      ) : modelError ? (
+                        <div style={styles.errorText}>{modelError}</div>
+                      ) : (
+                        <select
+                          style={styles.select}
+                          value={config[agent.id as keyof typeof config]}
+                          onChange={(e) => handleChange(agent.id, e.target.value)}
+                        >
+                          <option value="">Select a model...</option>
+                          {getSortedProviders().map((provider) => (
+                            <optgroup key={provider} label={formatProviderName(provider)}>
+                              {groupedModels[provider].map((model) => (
+                                <option key={model.id} value={model.id}>
+                                  {model.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
                 )}
@@ -492,6 +606,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: '600',
     color: '#1A1915',
     marginBottom: '2px',
+    display: 'flex',
+    alignItems: 'center',
   },
   agentDescription: {
     fontSize: '12px',
@@ -506,48 +622,36 @@ const styles: Record<string, React.CSSProperties> = {
   agentBody: {
     padding: '0 16px 16px',
   },
-  suggestions: {
-    marginTop: '12px',
-  },
-  suggestionsLabel: {
-    fontSize: '11px',
-    fontWeight: '500',
-    color: '#9A948D',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-    display: 'block',
-    marginBottom: '8px',
-  },
-  suggestionTags: {
+  visionNote: {
     display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '6px',
-  },
-  suggestionTag: {
-    display: 'inline-flex',
     alignItems: 'center',
     gap: '6px',
-    padding: '6px 12px',
-    fontSize: '12px',
-    fontWeight: '500',
-    color: '#6B6560',
-    backgroundColor: '#F0EDE8',
-    border: '1px solid transparent',
-    borderRadius: '100px',
-    cursor: 'pointer',
-    transition: 'all 150ms ease',
-  },
-  suggestionTagActive: {
-    backgroundColor: '#DA7756',
-    color: '#FFFFFF',
-  },
-  recommendedBadge: {
-    fontSize: '10px',
-    fontWeight: '600',
+    fontSize: '11px',
     color: '#DA7756',
-    backgroundColor: '#FFF5F2',
-    padding: '2px 6px',
-    borderRadius: '4px',
+    marginBottom: '12px',
+    padding: '6px 10px',
+    backgroundColor: '#FFF8F6',
+    borderRadius: '6px',
+  },
+  modelSelector: {
+    marginTop: '12px',
+  },
+  select: {
+    width: '100%',
+    padding: '10px 12px',
+    fontSize: '13px',
+    fontFamily: 'inherit',
+    border: '2px solid #E8E4DE',
+    borderRadius: '8px',
+    backgroundColor: '#FFFFFF',
+    color: '#1A1915',
+    cursor: 'pointer',
+    outline: 'none',
+  },
+  loadingText: {
+    fontSize: '12px',
+    color: '#9A948D',
+    padding: '8px 0',
   },
   saveButton: {
     width: '100%',

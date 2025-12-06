@@ -515,7 +515,7 @@ const Browseless = () => {
           "Authorization": `Bearer ${llmConfig.apiKey}`,
         },
         body: JSON.stringify({
-          model: llmConfig.plannerModel || llmConfig.chatModel || "anthropic/claude-sonnet-4.5",
+          model: llmConfig.plannerModel || llmConfig.chatModel || "anthropic/claude-sonnet-4",
           messages: [
             {
               role: "user",

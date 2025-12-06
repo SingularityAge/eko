@@ -173,7 +173,7 @@ export async function init(): Promise<ChatAgent | void> {
   initAgentServices();
 
   const baseURL = "https://openrouter.ai/api/v1";
-  const defaultModel = "anthropic/claude-sonnet-4.5";
+  const defaultModel = "anthropic/claude-sonnet-4";
 
   // Create named LLM configs for each agent role
   const llms: LLMs = {
