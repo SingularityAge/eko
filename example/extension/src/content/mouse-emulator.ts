@@ -6,9 +6,42 @@ export interface Point {
 export class MouseEmulator {
   private currentPosition: Point = { x: 0, y: 0 };
   private isMoving = false;
+  private cursorElement: HTMLDivElement | null = null;
 
   constructor() {
     this.updateCurrentPosition();
+    this.createVisualCursor();
+  }
+
+  private createVisualCursor(): void {
+    this.cursorElement = document.createElement('div');
+    this.cursorElement.id = 'persona-cursor';
+    this.cursorElement.style.cssText = `
+      position: fixed;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #ff4444;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 999999;
+      transition: opacity 0.2s;
+      background: rgba(255, 68, 68, 0.2);
+      box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+    `;
+    this.cursorElement.style.display = 'none';
+    document.body.appendChild(this.cursorElement);
+  }
+
+  showCursor(): void {
+    if (this.cursorElement) {
+      this.cursorElement.style.display = 'block';
+    }
+  }
+
+  hideCursor(): void {
+    if (this.cursorElement) {
+      this.cursorElement.style.display = 'none';
+    }
   }
 
   private updateCurrentPosition(): void {
@@ -170,15 +203,23 @@ export class MouseEmulator {
   }
 
   private dispatchMouseMove(point: Point): void {
+    const clientX = point.x - window.scrollX;
+    const clientY = point.y - window.scrollY;
+
+    if (this.cursorElement) {
+      this.cursorElement.style.left = `${clientX - 10}px`;
+      this.cursorElement.style.top = `${clientY - 10}px`;
+    }
+
     const event = new MouseEvent('mousemove', {
       bubbles: true,
       cancelable: true,
       view: window,
-      clientX: point.x - window.scrollX,
-      clientY: point.y - window.scrollY,
+      clientX: clientX,
+      clientY: clientY,
     });
 
-    document.elementFromPoint(point.x - window.scrollX, point.y - window.scrollY)?.dispatchEvent(event);
+    document.elementFromPoint(clientX, clientY)?.dispatchEvent(event);
   }
 
   async click(element: HTMLElement): Promise<void> {

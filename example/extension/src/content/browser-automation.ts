@@ -25,10 +25,12 @@ export class BrowserAutomation {
 
   async start(): Promise<void> {
     this.isActive = true;
+    this.mouseEmulator.showCursor();
   }
 
   stop(): void {
     this.isActive = false;
+    this.mouseEmulator.hideCursor();
   }
 
   async executeAction(action: BrowserAction): Promise<void> {

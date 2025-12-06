@@ -165,6 +165,8 @@ const taskCallback: AgentStreamCallback & HumanCallback = {
   },
 };
 
+let hasShownApiKeyWarning = false;
+
 export async function init(): Promise<ChatAgent | void> {
   if (!errorRecovery) {
     errorRecovery = new ErrorRecovery();
@@ -176,15 +178,19 @@ export async function init(): Promise<ChatAgent | void> {
   const storageKey = "llmConfig";
   const llmConfig = (await chrome.storage.sync.get([storageKey]))[storageKey];
   if (!llmConfig || !llmConfig.apiKey) {
-    printLog(
-      "Please configure your OpenRouter API key in the extension options.",
-      "error"
-    );
-    setTimeout(() => {
-      chrome.runtime.openOptionsPage();
-    }, 1000);
+    if (!hasShownApiKeyWarning) {
+      hasShownApiKeyWarning = true;
+      printLog(
+        "OpenRouter API key not configured. Please configure it in settings.",
+        "info"
+      );
+      setTimeout(() => {
+        chrome.runtime.openOptionsPage();
+      }, 2000);
+    }
     return;
   }
+  hasShownApiKeyWarning = false;
 
   initAgentServices();
 

@@ -50,7 +50,7 @@ const AppRun = () => {
   const [persona, setPersona] = useState<Persona | null>(null);
   const [generating, setGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
   const [personaEmail, setPersonaEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
   const [simulationStatus, setSimulationStatus] = useState<SimulationStatus | null>(null);
@@ -150,8 +150,9 @@ const AppRun = () => {
       const llmConfig = config.llmConfig;
 
       if (!llmConfig || !llmConfig.apiKey) {
-        AntdMessage.error("Please configure your OpenRouter API key in settings");
-        chrome.runtime.openOptionsPage();
+        AntdMessage.warning("OpenRouter API key not configured. Opening settings...", 5);
+        setTimeout(() => chrome.runtime.openOptionsPage(), 1000);
+        setGenerating(false);
         return;
       }
 
@@ -285,11 +286,46 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
     setSimulationStatus(null);
   };
 
+  const colors = {
+    light: {
+      background: "#FFFFFF",
+      surface: "#F9FAFB",
+      surfaceHover: "#F3F4F6",
+      border: "#E5E7EB",
+      text: "#1F2937",
+      textSecondary: "#6B7280",
+      primary: "#2563EB",
+      primaryHover: "#1D4ED8",
+    },
+    dark: {
+      background: "#1A1A1A",
+      surface: "#2A2A2A",
+      surfaceHover: "#353535",
+      border: "#404040",
+      text: "#E5E7EB",
+      textSecondary: "#9CA3AF",
+      primary: "#3B82F6",
+      primaryHover: "#2563EB",
+    }
+  };
+
+  const theme = darkMode ? colors.dark : colors.light;
+
+  const cardStyle = {
+    marginBottom: 16,
+    backgroundColor: theme.surface,
+    border: `1px solid ${theme.border}`,
+    borderRadius: 8,
+  };
+
   const renderPersonaPreview = () => {
     if (!persona) return null;
 
     return (
-      <Card title="Persona Preview" style={{ marginTop: 16 }}>
+      <Card
+        title={<span style={{ fontSize: 15, fontWeight: 500 }}>Persona Preview</span>}
+        style={{ ...cardStyle, marginTop: 16 }}
+      >
         <Space direction="vertical" style={{ width: "100%" }}>
           <div>
             <Text strong>Demographics: </Text>
@@ -335,8 +371,8 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
   const renderControlTab = () => (
     <>
       <Card
-        title="1. Describe Your Persona"
-        style={{ marginBottom: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
+        title={<span style={{ fontSize: 15, fontWeight: 500 }}>1. Describe Your Persona</span>}
+        style={cardStyle}
       >
         <TextArea
           rows={4}
@@ -363,8 +399,8 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
       </Card>
 
       <Card
-        title="2. Manage Persona"
-        style={{ marginBottom: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
+        title={<span style={{ fontSize: 15, fontWeight: 500 }}>2. Manage Persona</span>}
+        style={cardStyle}
       >
         <Space direction="vertical" style={{ width: "100%" }}>
           <Space style={{ width: "100%" }}>
@@ -415,10 +451,37 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
                 placeholder="Email password for simulation"
                 value={emailPassword}
                 onChange={(e) => setEmailPassword(e.target.value)}
-                style={{ marginBottom: 4 }}
+                style={{ marginBottom: 12 }}
               />
-              <Text style={{ fontSize: 12, color: "#888" }}>
-                ⚠️ Stored locally only. Used for simulation purposes.
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <Text strong style={{ color: theme.text }}>
+                    Enable Email Auto-Verify
+                  </Text>
+                  <br />
+                  <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                    Automatically detect signups and fill verification codes
+                  </Text>
+                </div>
+                <Switch
+                  checked={emailAutoVerifyEnabled}
+                  onChange={(checked) => {
+                    setEmailAutoVerifyEnabled(checked);
+                    chrome.runtime.sendMessage({
+                      type: "enableEmailAutoVerify",
+                      data: {
+                        enabled: checked,
+                        email: persona?.email,
+                        password: emailPassword,
+                      },
+                    });
+                  }}
+                  disabled={!persona}
+                />
+              </div>
+              <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 4, display: "block" }}>
+                Stored locally only. Used for simulation purposes.
               </Text>
             </div>
           )}
@@ -428,52 +491,8 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
       {renderPersonaPreview()}
 
       <Card
-        title="Email Auto-Verify"
-        style={{ marginTop: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
-      >
-        <Space direction="vertical" style={{ width: "100%" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <Text strong style={{ color: darkMode ? "#ffffff" : "#000000" }}>
-                Enable Email Auto-Verify
-              </Text>
-              <br />
-              <Text style={{ fontSize: 12, color: "#888" }}>
-                Automatically detect signups and fill verification codes
-              </Text>
-            </div>
-            <Switch
-              checked={emailAutoVerifyEnabled}
-              onChange={(checked) => {
-                setEmailAutoVerifyEnabled(checked);
-                chrome.runtime.sendMessage({
-                  type: "enableEmailAutoVerify",
-                  data: {
-                    enabled: checked,
-                    email: persona?.email,
-                    password: emailPassword,
-                  },
-                });
-              }}
-              disabled={!persona}
-            />
-          </div>
-          {emailAutoVerifyEnabled && (
-            <div style={{ marginTop: 12, padding: 12, backgroundColor: darkMode ? "#1a1a1a" : "#f5f5f5", borderRadius: 6 }}>
-              <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666" }}>
-                ✓ Will monitor for signup forms<br />
-                ✓ Poll ProtonMail inbox every 10s<br />
-                ✓ Auto-extract verification codes/links<br />
-                ✓ Fill codes with realistic typing
-              </Text>
-            </div>
-          )}
-        </Space>
-      </Card>
-
-      <Card
-        title="Control Simulation"
-        style={{ marginTop: 16, backgroundColor: darkMode ? "#2a2a2a" : "#ffffff" }}
+        title={<span style={{ fontSize: 15, fontWeight: 500 }}>Control Simulation</span>}
+        style={{ ...cardStyle, marginTop: 16 }}
       >
         <Space direction="vertical" style={{ width: "100%" }}>
           <Space style={{ width: "100%" }}>
@@ -500,7 +519,7 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
           </Space>
 
           {!persona && (
-            <Paragraph style={{ marginTop: 12, color: "#999" }}>
+            <Paragraph style={{ marginTop: 12, color: theme.textSecondary }}>
               Generate or upload a persona to start simulation
             </Paragraph>
           )}
@@ -510,8 +529,10 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
               size="small"
               style={{
                 marginTop: 12,
-                backgroundColor: darkMode ? "#1f1f1f" : "#f5f5f5",
-                borderLeft: `4px solid ${simulationStatus ? "#52c41a" : "#999"}`,
+                backgroundColor: theme.surface,
+                border: `1px solid ${theme.border}`,
+                borderLeft: `4px solid ${simulationStatus ? "#10B981" : theme.border}`,
+                borderRadius: 6,
               }}
             >
               <Space direction="vertical" size="small" style={{ width: "100%" }}>
@@ -520,23 +541,23 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
                     width: 8,
                     height: 8,
                     borderRadius: "50%",
-                    backgroundColor: "#52c41a",
+                    backgroundColor: "#10B981",
                     animation: "pulse 2s infinite"
                   }} />
-                  <Text strong style={{ color: darkMode ? "#fff" : "#000", fontSize: 13 }}>
+                  <Text strong style={{ color: theme.text, fontSize: 13, fontWeight: 500 }}>
                     Simulation Active
                   </Text>
                 </div>
                 {simulationStatus && (
                   <>
-                    <div style={{ paddingLeft: 16, opacity: 0.8 }}>
-                      <Text style={{ color: darkMode ? "#aaa" : "#666", fontSize: 12 }}>
+                    <div style={{ paddingLeft: 16 }}>
+                      <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
                         {simulationStatus.activity}
                       </Text>
                     </div>
                     {simulationStatus.site !== "N/A" && (
-                      <div style={{ paddingLeft: 16, opacity: 0.7 }}>
-                        <Text style={{ color: darkMode ? "#888" : "#888", fontSize: 11 }}>
+                      <div style={{ paddingLeft: 16 }}>
+                        <Text style={{ color: theme.textSecondary, fontSize: 11, opacity: 0.8 }}>
                           {simulationStatus.site.length > 40
                             ? simulationStatus.site.substring(0, 40) + "..."
                             : simulationStatus.site}
@@ -548,7 +569,7 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
                         <div style={{
                           flex: 1,
                           height: 4,
-                          backgroundColor: darkMode ? "#333" : "#ddd",
+                          backgroundColor: theme.border,
                           borderRadius: 2,
                           overflow: "hidden"
                         }}>
@@ -556,16 +577,16 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
                             width: `${simulationStatus.energy}%`,
                             height: "100%",
                             backgroundColor: simulationStatus.energy > 50
-                              ? "#52c41a"
+                              ? "#10B981"
                               : simulationStatus.energy > 30
-                              ? "#faad14"
-                              : "#f5222d",
+                              ? "#F59E0B"
+                              : "#EF4444",
                             transition: "width 0.3s ease"
                           }} />
                         </div>
                         <Text style={{
                           fontSize: 11,
-                          color: darkMode ? "#888" : "#888",
+                          color: theme.textSecondary,
                           minWidth: 35
                         }}>
                           {simulationStatus.energy.toFixed(0)}%
@@ -588,18 +609,18 @@ Do NOT include an email field. Output ONLY valid JSON, no markdown or explanatio
         display: "flex",
         flexDirection: "column",
         height: "100vh",
-        backgroundColor: darkMode ? "#1a1a1a" : "#ffffff",
-        color: darkMode ? "#ffffff" : "#000000",
+        backgroundColor: theme.background,
+        color: theme.text,
         padding: "20px",
         overflowY: "auto",
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <Title level={2} style={{ margin: 0, color: darkMode ? "#ffffff" : "#000000" }}>
+        <Title level={2} style={{ margin: 0, color: theme.text, fontWeight: 600 }}>
           PersonaSurfer
         </Title>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Text style={{ color: darkMode ? "#ffffff" : "#000000" }}>Dark Mode</Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 14 }}>Dark Mode</Text>
           <Switch checked={darkMode} onChange={setDarkMode} />
         </div>
       </div>

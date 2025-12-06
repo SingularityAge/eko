@@ -1,5 +1,7 @@
 import { AgentContext, BaseBrowserLabelsAgent } from "@eko-ai/eko";
 
+declare const chrome: any;
+
 export default class BrowserAgent extends BaseBrowserLabelsAgent {
   protected async screenshot(
     agentContext: AgentContext

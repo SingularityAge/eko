@@ -13,8 +13,8 @@
   ],
   "dependencies": {
     "@ant-design/icons": "^5.5.1",
-    "@eko-ai/eko": "workspace:*",
-    "@eko-ai/eko-extension": "workspace:*",
+    "@eko-ai/eko": "file:../../packages/eko-core",
+    "@eko-ai/eko-extension": "file:../../packages/eko-extension",
     "antd": "^5.22.4",
     "katex": "^0.16.11",
     "pdfjs-dist": "^5.4.394",

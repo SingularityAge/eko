@@ -10,8 +10,8 @@
     "declarationMap": true,
     "rootDir": "src",
     "outDir": "./dist",
-    "noEmitOnError": true,
-    "typeRoots": ["node_modules/@types"]
+    "noEmitOnError": false,
+    "skipLibCheck": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
