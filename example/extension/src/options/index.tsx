@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 
 // SVG Icons
@@ -126,10 +126,46 @@ const OptionsPage = () => {
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
-  const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [groupedModels, setGroupedModels] = useState<GroupedModels>({});
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [recentlySelected, setRecentlySelected] = useState<Record<string, boolean>>({});
+
+  // Fetch models from OpenRouter - reusable function
+  const fetchModels = useCallback(async () => {
+    setLoadingModels(true);
+    setModelError(null);
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/models");
+      if (!response.ok) {
+        throw new Error("Failed to fetch models");
+      }
+      const data = await response.json();
+      const modelList: OpenRouterModel[] = data.data || [];
+
+      // Sort and group by provider
+      const grouped: GroupedModels = {};
+      modelList.forEach((model) => {
+        const provider = model.id.split("/")[0] || "other";
+        if (!grouped[provider]) {
+          grouped[provider] = [];
+        }
+        grouped[provider].push(model);
+      });
+
+      // Sort models within each provider alphabetically
+      Object.keys(grouped).forEach((provider) => {
+        grouped[provider].sort((a, b) => a.name.localeCompare(b.name));
+      });
+
+      setGroupedModels(grouped);
+    } catch (error) {
+      console.error("Error fetching models:", error);
+      setModelError("Failed to load models. Please check your connection.");
+    } finally {
+      setLoadingModels(false);
+    }
+  }, []);
 
   // Load saved config
   useEffect(() => {
@@ -147,46 +183,10 @@ const OptionsPage = () => {
     });
   }, []);
 
-  // Fetch models from OpenRouter
+  // Fetch models on page load
   useEffect(() => {
-    const fetchModels = async () => {
-      setLoadingModels(true);
-      setModelError(null);
-      try {
-        const response = await fetch("https://openrouter.ai/api/v1/models");
-        if (!response.ok) {
-          throw new Error("Failed to fetch models");
-        }
-        const data = await response.json();
-        const modelList: OpenRouterModel[] = data.data || [];
-
-        // Sort and group by provider
-        const grouped: GroupedModels = {};
-        modelList.forEach((model) => {
-          const provider = model.id.split("/")[0] || "other";
-          if (!grouped[provider]) {
-            grouped[provider] = [];
-          }
-          grouped[provider].push(model);
-        });
-
-        // Sort models within each provider alphabetically
-        Object.keys(grouped).forEach((provider) => {
-          grouped[provider].sort((a, b) => a.name.localeCompare(b.name));
-        });
-
-        setModels(modelList);
-        setGroupedModels(grouped);
-      } catch (error) {
-        console.error("Error fetching models:", error);
-        setModelError("Failed to load models. Please check your connection.");
-      } finally {
-        setLoadingModels(false);
-      }
-    };
-
     fetchModels();
-  }, []);
+  }, [fetchModels]);
 
   const handleChange = (field: string, value: string) => {
     setConfig(prev => ({ ...prev, [field]: value }));
@@ -194,6 +194,16 @@ const OptionsPage = () => {
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: "" }));
     }
+  };
+
+  const handleModelSelect = (agentId: string, value: string) => {
+    handleChange(agentId, value);
+    // Show glow effect
+    setRecentlySelected(prev => ({ ...prev, [agentId]: true }));
+    // Remove glow after animation
+    setTimeout(() => {
+      setRecentlySelected(prev => ({ ...prev, [agentId]: false }));
+    }, 1500);
   };
 
   const validate = () => {
@@ -264,176 +274,171 @@ const OptionsPage = () => {
 
   return (
     <div style={styles.container}>
-      <div style={styles.content}>
-        {/* Header */}
-        <div style={styles.header}>
+      {/* Fixed Header */}
+      <div style={styles.fixedHeader}>
+        <div style={styles.headerContent}>
           <div style={styles.logoContainer}>
             <div style={styles.logo}>
               <LogoIcon />
             </div>
-            <div>
-              <h1 style={styles.title}>
-                Browseless <span style={styles.titleLight}>Settings</span>
-              </h1>
-            </div>
+            <h1 style={styles.title}>
+              Browseless <span style={styles.titleLight}>Settings</span>
+            </h1>
           </div>
         </div>
+      </div>
 
-        {/* API Key Section */}
-        <div style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div style={styles.sectionIcon}>
-              <KeyIcon />
+      {/* Scrollable Content */}
+      <div style={styles.scrollContent}>
+        <div style={styles.content}>
+          {/* API Key Section */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <div style={styles.sectionIcon}>
+                <KeyIcon />
+              </div>
+              <div>
+                <h2 style={styles.sectionTitle}>API Key</h2>
+                <p style={styles.sectionDescription}>Your OpenRouter API key for accessing AI models</p>
+              </div>
             </div>
-            <div>
-              <h2 style={styles.sectionTitle}>API Key</h2>
-              <p style={styles.sectionDescription}>Your OpenRouter API key for accessing AI models</p>
-            </div>
-          </div>
 
-          <div style={styles.inputGroup}>
-            <div style={styles.inputWrapper}>
-              <input
-                type={showApiKey ? "text" : "password"}
-                style={{
-                  ...styles.input,
-                  ...(errors.apiKey ? styles.inputError : {}),
-                }}
-                placeholder="sk-or-v1-..."
-                value={config.apiKey}
-                onChange={(e) => handleChange("apiKey", e.target.value)}
-              />
-              <button
-                style={styles.toggleButton}
-                onClick={() => setShowApiKey(!showApiKey)}
-                type="button"
-              >
-                {showApiKey ? "Hide" : "Show"}
-              </button>
-            </div>
-            {errors.apiKey && <span style={styles.errorText}>{errors.apiKey}</span>}
-          </div>
-
-          <a
-            href="https://openrouter.ai/keys"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={styles.link}
-          >
-            Get your API key at openrouter.ai
-          </a>
-        </div>
-
-        {/* Agent Models Section */}
-        <div style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div style={styles.sectionIcon}>
-              <BrainIcon />
-            </div>
-            <div>
-              <h2 style={styles.sectionTitle}>Agent Models</h2>
-              <p style={styles.sectionDescription}>Assign different AI models to each agent</p>
-            </div>
-          </div>
-
-          <div style={styles.agentList}>
-            {agentConfig.map((agent) => (
-              <div key={agent.id} style={styles.agentCard}>
+            <div style={styles.inputGroup}>
+              <div style={styles.inputWrapper}>
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  style={{
+                    ...styles.input,
+                    ...(errors.apiKey ? styles.inputError : {}),
+                  }}
+                  placeholder="sk-or-v1-..."
+                  value={config.apiKey}
+                  onChange={(e) => handleChange("apiKey", e.target.value)}
+                />
                 <button
-                  style={styles.agentHeader}
-                  onClick={() => toggleAgent(agent.id)}
+                  style={styles.toggleButton}
+                  onClick={() => setShowApiKey(!showApiKey)}
                   type="button"
                 >
-                  <div style={styles.agentInfo}>
-                    <div style={styles.agentIcon}>{agent.icon}</div>
-                    <div>
-                      <div style={styles.agentName}>
-                        {agent.name}
-                        {agent.requiresVision && <VisionIcon />}
-                      </div>
-                      <div style={styles.agentDescription}>{agent.description}</div>
-                    </div>
-                  </div>
-                  <div style={{
-                    ...styles.chevron,
-                    transform: expandedAgent === agent.id ? 'rotate(180deg)' : 'rotate(0deg)',
-                  }}>
-                    <ChevronDownIcon />
-                  </div>
+                  {showApiKey ? "Hide" : "Show"}
                 </button>
-
-                {expandedAgent === agent.id && (
-                  <div style={styles.agentBody}>
-                    <input
-                      type="text"
-                      style={{
-                        ...styles.input,
-                        ...(errors[agent.id] ? styles.inputError : {}),
-                        marginBottom: '8px',
-                      }}
-                      placeholder="e.g., anthropic/claude-sonnet-4"
-                      value={config[agent.id as keyof typeof config]}
-                      onChange={(e) => handleChange(agent.id, e.target.value)}
-                    />
-                    {errors[agent.id] && <span style={styles.errorText}>{errors[agent.id]}</span>}
-
-                    {agent.requiresVision && (
-                      <div style={styles.visionNote}>
-                        <VisionIcon />
-                        <span>This agent benefits from vision-capable models</span>
-                      </div>
-                    )}
-
-                    {/* Model selector */}
-                    <div style={styles.modelSelector}>
-                      {loadingModels ? (
-                        <div style={styles.loadingText}>Loading models...</div>
-                      ) : modelError ? (
-                        <div style={styles.errorText}>{modelError}</div>
-                      ) : (
-                        <select
-                          style={styles.select}
-                          value={config[agent.id as keyof typeof config]}
-                          onChange={(e) => handleChange(agent.id, e.target.value)}
-                        >
-                          <option value="">Select a model...</option>
-                          {getSortedProviders().map((provider) => (
-                            <optgroup key={provider} label={formatProviderName(provider)}>
-                              {groupedModels[provider].map((model) => (
-                                <option key={model.id} value={model.id}>
-                                  {model.name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
-            ))}
-          </div>
-        </div>
+              {errors.apiKey && <span style={styles.errorText}>{errors.apiKey}</span>}
+            </div>
 
-        {/* Save Button */}
-        <button
-          style={{
-            ...styles.saveButton,
-            ...(saved ? styles.saveButtonSuccess : {}),
-          }}
-          onClick={handleSave}
-          type="button"
-        >
-          {saved ? (
-            <>
-              <CheckIcon />
-              <span>Saved!</span>
-            </>
-          ) : (
-            <span>Save Settings</span>
-          )}
-        </button>
+            <a
+              href="https://openrouter.ai/keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.link}
+            >
+              Get your API key at openrouter.ai
+            </a>
+          </div>
+
+          {/* Agent Models Section */}
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <div style={styles.sectionIcon}>
+                <BrainIcon />
+              </div>
+              <div>
+                <h2 style={styles.sectionTitle}>Agent Models</h2>
+                <p style={styles.sectionDescription}>Assign different AI models to each agent</p>
+              </div>
+            </div>
+
+            <div style={styles.agentList}>
+              {agentConfig.map((agent) => (
+                <div key={agent.id} style={styles.agentCard}>
+                  <button
+                    style={styles.agentHeader}
+                    onClick={() => toggleAgent(agent.id)}
+                    type="button"
+                  >
+                    <div style={styles.agentInfo}>
+                      <div style={styles.agentIcon}>{agent.icon}</div>
+                      <div>
+                        <div style={styles.agentName}>
+                          {agent.name}
+                          {agent.requiresVision && <VisionIcon />}
+                        </div>
+                        <div style={styles.agentDescription}>{agent.description}</div>
+                      </div>
+                    </div>
+                    <div style={{
+                      ...styles.chevron,
+                      transform: expandedAgent === agent.id ? 'rotate(180deg)' : 'rotate(0deg)',
+                    }}>
+                      <ChevronDownIcon />
+                    </div>
+                  </button>
+
+                  {expandedAgent === agent.id && (
+                    <div style={styles.agentBody}>
+                      {agent.requiresVision && (
+                        <div style={styles.visionNote}>
+                          <VisionIcon />
+                          <span>This agent benefits from vision-capable models</span>
+                        </div>
+                      )}
+
+                      {/* Model selector */}
+                      <div style={styles.modelSelector}>
+                        {loadingModels ? (
+                          <div style={styles.loadingText}>Loading models...</div>
+                        ) : modelError ? (
+                          <div style={styles.errorText}>{modelError}</div>
+                        ) : (
+                          <select
+                            style={{
+                              ...styles.select,
+                              ...(recentlySelected[agent.id] ? styles.selectGlow : {}),
+                              ...(errors[agent.id] ? styles.selectError : {}),
+                            }}
+                            value={config[agent.id as keyof typeof config]}
+                            onChange={(e) => handleModelSelect(agent.id, e.target.value)}
+                          >
+                            <option value="">Select a model...</option>
+                            {getSortedProviders().map((provider) => (
+                              <optgroup key={provider} label={formatProviderName(provider)}>
+                                {groupedModels[provider].map((model) => (
+                                  <option key={model.id} value={model.id}>
+                                    {model.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                        )}
+                        {errors[agent.id] && <span style={styles.errorText}>{errors[agent.id]}</span>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <button
+            style={{
+              ...styles.saveButton,
+              ...(saved ? styles.saveButtonSuccess : {}),
+            }}
+            onClick={handleSave}
+            type="button"
+          >
+            {saved ? (
+              <>
+                <CheckIcon />
+                <span>Saved!</span>
+              </>
+            ) : (
+              <span>Save Settings</span>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -447,35 +452,50 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     WebkitFontSmoothing: 'antialiased',
   },
-  content: {
-    maxWidth: '560px',
-    margin: '0 auto',
-    padding: '32px 24px',
+  fixedHeader: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderBottom: '1px solid #E8E4DE',
+    zIndex: 100,
   },
-  header: {
-    marginBottom: '32px',
+  headerContent: {
+    maxWidth: '672px',
+    margin: '0 auto',
+    padding: '12px 24px',
   },
   logoContainer: {
     display: 'flex',
     alignItems: 'center',
-    gap: '14px',
+    gap: '10px',
   },
   logo: {
-    width: '48px',
-    height: '48px',
+    width: '32px',
+    height: '32px',
+    flexShrink: 0,
   },
   title: {
     fontFamily: "'Fraunces', serif",
-    fontSize: '24px',
+    fontSize: '18px',
     fontWeight: '500',
     color: '#1A1915',
     margin: 0,
-    letterSpacing: '-0.5px',
+    letterSpacing: '-0.3px',
   },
   titleLight: {
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     fontWeight: '300',
     color: '#9A948D',
+  },
+  scrollContent: {
+    paddingTop: '72px',
+  },
+  content: {
+    maxWidth: '672px',
+    margin: '0 auto',
+    padding: '24px 24px 32px',
   },
   section: {
     backgroundColor: '#FFFFFF',
@@ -636,19 +656,27 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '6px',
   },
   modelSelector: {
-    marginTop: '12px',
+    marginTop: '0',
   },
   select: {
     width: '100%',
-    padding: '10px 12px',
-    fontSize: '13px',
+    padding: '12px 14px',
+    fontSize: '14px',
     fontFamily: 'inherit',
     border: '2px solid #E8E4DE',
-    borderRadius: '8px',
+    borderRadius: '10px',
     backgroundColor: '#FFFFFF',
     color: '#1A1915',
     cursor: 'pointer',
     outline: 'none',
+    transition: 'border-color 200ms ease, box-shadow 200ms ease',
+  },
+  selectGlow: {
+    borderColor: '#DA7756',
+    boxShadow: '0 0 0 3px rgba(218, 119, 86, 0.2)',
+  },
+  selectError: {
+    borderColor: '#E53935',
   },
   loadingText: {
     fontSize: '12px',
