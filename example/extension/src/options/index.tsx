@@ -459,19 +459,23 @@ const OptionsPage = () => {
 // Styles
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    minHeight: '100vh',
+    height: '100vh',
     backgroundColor: '#F9F7F3',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     WebkitFontSmoothing: 'antialiased',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
   },
   fixedHeader: {
-    position: 'fixed',
+    position: 'sticky',
     top: 0,
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',
     borderBottom: '1px solid #E8E4DE',
     zIndex: 100,
+    flexShrink: 0,
   },
   headerContent: {
     maxWidth: '672px',
@@ -502,7 +506,8 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#9A948D',
   },
   scrollContent: {
-    paddingTop: '72px',
+    flex: 1,
+    overflowY: 'auto',
   },
   content: {
     maxWidth: '672px',
