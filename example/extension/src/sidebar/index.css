@@ -100,8 +100,9 @@ body {
 }
 
 .browseless-logo-text {
+  font-family: 'Fraunces', serif;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary);
   letter-spacing: -0.3px;
 }

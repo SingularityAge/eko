@@ -465,13 +465,15 @@ const styles: Record<string, React.CSSProperties> = {
     height: '48px',
   },
   title: {
+    fontFamily: "'Fraunces', serif",
     fontSize: '24px',
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#1A1915',
     margin: 0,
     letterSpacing: '-0.5px',
   },
   titleLight: {
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     fontWeight: '300',
     color: '#9A948D',
   },
