@@ -5,18 +5,30 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 
 // SVG Icons as React components - all sized consistently
 const LogoIcon = () => (
-  <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="32" height="32" rx="8" fill="url(#logoGradient)"/>
-    <path d="M8 16C8 11.5817 11.5817 8 16 8C20.4183 8 24 11.5817 24 16" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
-    <path d="M12 16C12 13.7909 13.7909 12 16 12C18.2091 12 20 13.7909 20 16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-    <circle cx="16" cy="16" r="2" fill="white"/>
-    <path d="M16 18V24" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-    <defs>
-      <linearGradient id="logoGradient" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#DA7756"/>
-        <stop offset="1" stopColor="#C56747"/>
-      </linearGradient>
-    </defs>
+  <svg viewBox="0 0 100 85" fill="none" xmlns="http://www.w3.org/2000/svg">
+    {/* Browser window */}
+    <rect x="8" y="8" width="84" height="68" rx="8" stroke="#DA7756" strokeWidth="5" fill="none"/>
+    {/* Browser dots */}
+    <circle cx="20" cy="18" r="3" fill="#DA7756"/>
+    <circle cx="30" cy="18" r="3" fill="#DA7756"/>
+    {/* Address bar */}
+    <rect x="42" y="14" width="42" height="8" rx="4" fill="#DA7756"/>
+    {/* Bird body */}
+    <path d="M62 42c0 8-6 14-14 14s-14-6-14-14c0-6 4-11 9-13l-8-12c12 4 22 12 27 25z" fill="#DA7756"/>
+    {/* Bird head */}
+    <circle cx="65" cy="35" r="8" fill="#DA7756"/>
+    {/* Bird eye */}
+    <circle cx="67" cy="33" r="2" fill="white"/>
+    {/* Bird beak */}
+    <path d="M73 35l6-2-6 4z" fill="#DA7756"/>
+    {/* Wing upper */}
+    <path d="M20 28c15-8 25-5 32 2-10-2-20 0-28 8l-4-10z" fill="#DA7756"/>
+    {/* Wing middle */}
+    <path d="M16 38c12-6 22-4 30 4-8-2-18 0-26 6l-4-10z" fill="#DA7756"/>
+    {/* Wing lower */}
+    <path d="M14 50c10-4 18-2 24 4-6-1-14 1-20 4l-4-8z" fill="#DA7756"/>
+    {/* Tail */}
+    <path d="M38 56c-4 8-10 18-18 24 2-8 6-16 12-22l6-2z" fill="#DA7756"/>
   </svg>
 );
 
