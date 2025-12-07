@@ -180,8 +180,9 @@ body {
 }
 
 .empty-state-title {
-  font-size: 18px;
-  font-weight: 600;
+  font-family: 'Fraunces', serif;
+  font-size: 20px;
+  font-weight: 500;
   color: var(--text-primary);
   margin: 0 0 8px 0;
 }
@@ -194,82 +195,82 @@ body {
   line-height: 1.6;
 }
 
-/* Status Card */
-.status-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-light);
+/* Message Bubbles */
+.message {
+  max-width: 85%;
+  animation: messageIn 0.2s ease-out;
+}
+
+@keyframes messageIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-user {
+  align-self: flex-end;
+}
+
+.message-assistant {
+  align-self: flex-start;
+}
+
+.message-content {
+  padding: 12px 16px;
   border-radius: var(--radius-md);
-  padding: 16px;
-  box-shadow: var(--shadow-sm);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.status-card-header {
+.message-user .message-content {
+  background: var(--accent-primary);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.message-assistant .message-content {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-bottom-left-radius: 4px;
+}
+
+/* Typing Indicator */
+.typing-indicator {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 4px;
+  padding: 4px 0;
 }
 
-.status-indicator {
+.typing-indicator span {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: var(--accent-success);
-  animation: pulse 2s infinite;
-}
-
-.status-indicator.paused {
-  background: var(--accent-warning);
-  animation: none;
-}
-
-.status-indicator.stopped {
   background: var(--text-tertiary);
-  animation: none;
+  border-radius: 50%;
+  animation: typingBounce 1.4s infinite ease-in-out both;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes typingBounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
-.status-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.status-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.status-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.status-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.status-value {
-  font-size: 13px;
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-.status-value.success { color: var(--accent-success); }
-.status-value.warning { color: var(--accent-warning); }
-.status-value.error { color: var(--accent-error); }
-
-/* Input Area - 27% viewport height */
+/* Input Area */
 .input-container {
   height: 27vh;
   min-height: 150px;
@@ -314,7 +315,12 @@ body {
   color: var(--text-placeholder);
 }
 
-/* Control Buttons - Inside input at bottom right */
+.prompt-textarea:disabled {
+  background: var(--bg-tertiary);
+  cursor: not-allowed;
+}
+
+/* Control Buttons */
 .input-controls {
   display: flex;
   align-items: center;
@@ -376,154 +382,15 @@ body {
   color: white;
 }
 
-/* Stop Button */
-.control-btn.stop {
-  background: var(--accent-error);
-  color: white;
-}
-
-.control-btn.stop:hover:not(:disabled) {
-  background: #D32F2F;
-  color: white;
-}
-
-/* Send Button */
-.control-btn.send {
-  background: var(--accent-primary);
-  color: white;
-  width: auto;
-  padding: 0 16px;
-  gap: 6px;
-}
-
-.control-btn.send:hover:not(:disabled) {
-  background: var(--accent-primary-hover);
-}
-
-.control-btn.send span {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-/* Persona Card */
-.persona-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-}
-
-.persona-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
+/* Reset Button */
+.control-btn.reset {
   background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-light);
-}
-
-.persona-card-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.persona-card-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.persona-card-body {
-  padding: 16px;
-}
-
-/* Info Section */
-.info-section {
-  margin-bottom: 16px;
-}
-
-.info-section-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.info-section-value {
-  font-size: 14px;
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-/* Credential Fields */
-.credential-field {
-  margin-bottom: 12px;
-}
-
-.credential-field-label {
-  display: block;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 6px;
-}
-
-.credential-field-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-family: inherit;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  transition: border-color var(--transition-fast);
-  box-sizing: border-box;
-}
-
-.credential-field-input:focus {
-  outline: none;
-  border-color: var(--border-focus);
-}
-
-.credential-field-input::placeholder {
-  color: var(--text-placeholder);
-}
-
-.credential-field-note {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  margin-top: 4px;
-}
-
-/* Icon Button Small */
-.icon-btn-sm {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
   color: var(--text-secondary);
-  transition: all var(--transition-fast);
 }
 
-.icon-btn-sm:hover {
-  background: var(--bg-hover);
+.control-btn.reset:hover:not(:disabled) {
+  background: var(--border-light);
   color: var(--text-primary);
-}
-
-.icon-btn-sm svg {
-  width: 16px;
-  height: 16px;
 }
 
 /* Toast/Message Overrides */
@@ -536,208 +403,10 @@ body {
   box-shadow: var(--shadow-lg) !important;
 }
 
-/* Loading Animation */
-.loading-dots {
-  display: flex;
-  gap: 4px;
-}
-
-.loading-dots span {
-  width: 6px;
-  height: 6px;
-  background: white;
-  border-radius: 50%;
-  animation: loadingDot 1.4s infinite ease-in-out both;
-}
-
-.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
-.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes loadingDot {
-  0%, 80%, 100% {
-    transform: scale(0);
-  }
-  40% {
-    transform: scale(1);
-  }
-}
-
-/* File Input Hidden */
-.file-input-hidden {
-  display: none;
-}
-
-/* ================================
-   Activity Timeline Styles
-   ================================ */
-
-.activity-timeline-container {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-light);
-}
-
-.timeline-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-/* Status text - regular weight, same color as time */
-.timeline-status-text {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-tertiary);
-}
-
-.timeline-time {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  font-weight: 400;
-}
-
-/* Timeline wrapper - taller to show all content */
-.timeline-wrapper {
-  position: relative;
-  height: 110px;
-  overflow: hidden;
-}
-
-/* Fade gradients on edges */
-.timeline-fade-left,
-.timeline-fade-right {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 10%;
-  z-index: 10;
-  pointer-events: none;
-}
-
-.timeline-fade-left {
-  left: 0;
-  background: linear-gradient(to right, var(--bg-secondary) 0%, transparent 100%);
-}
-
-.timeline-fade-right {
-  right: 0;
-  background: linear-gradient(to left, var(--bg-secondary) 0%, transparent 100%);
-}
-
-.timeline-track {
-  position: relative;
-  height: 6px;
-  background: var(--bg-tertiary);
-  border-radius: 3px;
-  margin-top: 42px;
-}
-
-.timeline-segment {
-  position: absolute;
-  height: 100%;
-  border-radius: 3px;
-  transition: opacity 0.3s ease;
-}
-
-/* Current time indicator - arrow pointing down */
-.current-time-indicator {
-  position: absolute;
-  top: -16px;
-  transform: translateX(-50%);
-  z-index: 15;
-}
-
-.indicator-arrow {
-  color: var(--accent-primary);
-  font-size: 14px;
-  line-height: 1;
-  text-align: center;
-}
-
-/* Timeline labels - increased distance */
-.timeline-label {
-  position: absolute;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.timeline-label.label-up {
-  bottom: 100%;
-  margin-bottom: 8px;
-  flex-direction: column-reverse;
-}
-
-.timeline-label.label-down {
-  top: 100%;
-  margin-top: 8px;
-}
-
-/* Elongated vertical lines */
-.label-line {
-  width: 1px;
-  height: 18px;
-}
-
-.label-text {
-  font-size: 9px;
-  font-weight: 500;
-  white-space: nowrap;
-  padding: 2px 4px;
-  background: var(--bg-secondary);
-  border-radius: 2px;
-}
-
-.timeline-label.label-up .label-text {
-  margin-bottom: 3px;
-}
-
-.timeline-label.label-down .label-text {
-  margin-top: 3px;
-}
-
-/* Hour markers - foremost layer with white padding */
-.timeline-hours {
-  position: relative;
-  margin-top: 14px;
-  height: 20px;
-  z-index: 20;
-}
-
-.hour-marker {
-  position: absolute;
-  transform: translateX(-50%);
-  z-index: 20;
-}
-
-.hour-marker-text {
-  display: inline-block;
-  font-size: 9px;
-  color: var(--text-tertiary);
-  font-weight: 500;
-  background: var(--bg-secondary);
-  padding: 2px 4px;
-  border-radius: 3px;
-}
-
 /* Responsive */
 @media (max-height: 500px) {
   .input-container {
     height: 35vh;
     min-height: 120px;
-  }
-}
-
-@media (max-width: 400px) {
-  .timeline-label .label-text {
-    font-size: 8px;
-  }
-
-  .hour-marker span {
-    font-size: 8px;
   }
 }
