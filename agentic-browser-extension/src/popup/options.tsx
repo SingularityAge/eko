@@ -1,6 +1,6 @@
 // ============================================
 // Options Page Component
-// Full settings configuration
+// Full settings configuration - Light Mode
 // ============================================
 
 import React, { useState, useEffect } from 'react';
@@ -12,7 +12,6 @@ import {
   DEFAULT_MODELS,
   EMAIL_PROVIDERS
 } from '../shared/types';
-import { PersonaEngine } from '../services/persona-engine';
 
 function Options() {
   const [settings, setSettings] = useState<ExtensionSettings | null>(null);
@@ -20,6 +19,7 @@ function Options() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [showEmailPassword, setShowEmailPassword] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -59,23 +59,17 @@ function Options() {
   const updateSettings = (path: string, value: any) => {
     if (!settings) return;
 
-    const newSettings = { ...settings };
+    const newSettings = JSON.parse(JSON.stringify(settings));
     const keys = path.split('.');
     let current: any = newSettings;
 
     for (let i = 0; i < keys.length - 1; i++) {
+      if (!current[keys[i]]) current[keys[i]] = {};
       current = current[keys[i]];
     }
 
     current[keys[keys.length - 1]] = value;
     setSettings(newSettings);
-  };
-
-  const generateNewPersona = () => {
-    const engine = new PersonaEngine();
-    const newPersona = engine.generatePersona();
-    updateSettings('persona', newPersona);
-    showToast('New persona generated!');
   };
 
   const validateApiKey = async () => {
@@ -104,7 +98,7 @@ function Options() {
   if (loading) {
     return (
       <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <div>Loading...</div>
+        <div style={{ color: '#666' }}>Loading...</div>
       </div>
     );
   }
@@ -117,79 +111,180 @@ function Options() {
     );
   }
 
+  const agentModels = [
+    { key: 'browsing', name: 'Browsing Agent', description: 'General web navigation', recommended: 'Claude 3.5 Sonnet' },
+    { key: 'search', name: 'Search Agent', description: 'Research & web search', recommended: 'Perplexity Sonar (real-time)' },
+    { key: 'social', name: 'Social Agent', description: 'Social media browsing', recommended: 'Claude 3.5 Sonnet' },
+    { key: 'email', name: 'Email Agent', description: 'Email checking', recommended: 'Claude 3 Haiku (fast)' },
+    { key: 'persona', name: 'Persona Agent', description: 'Behavior planning', recommended: 'GPT-4o' }
+  ];
+
   return (
     <div className="container">
       <h1>Agentic Browser Settings</h1>
-      <p className="subtitle">Configure your AI browsing agents and persona</p>
+      <p className="subtitle">Configure your AI browsing agents and credentials</p>
 
       {/* API Configuration */}
       <div className="section">
-        <h2 className="section-title">🔑 API Configuration</h2>
+        <h2 className="section-title">
+          <span className="icon">🔑</span>
+          API Configuration
+        </h2>
 
         <div className="form-group">
           <label>OpenRouter API Key</label>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div className="input-group">
             <input
               type={showPassword ? 'text' : 'password'}
               value={settings.openRouterApiKey}
               onChange={(e) => updateSettings('openRouterApiKey', e.target.value)}
-              placeholder="sk-or-..."
-              style={{ flex: 1 }}
+              placeholder="sk-or-v1-..."
             />
             <button
               className="btn btn-secondary"
               onClick={() => setShowPassword(!showPassword)}
+              style={{ padding: '12px 16px' }}
             >
               {showPassword ? '🙈' : '👁️'}
             </button>
-            <button
-              className="btn btn-secondary"
-              onClick={validateApiKey}
-            >
+            <button className="btn btn-secondary" onClick={validateApiKey}>
               Validate
             </button>
           </div>
           <p className="help-text">
-            Get your API key from <a href="https://openrouter.ai/keys" target="_blank" style={{ color: '#4CAF50' }}>openrouter.ai/keys</a>
+            Get your API key from <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
           </p>
         </div>
       </div>
 
-      {/* Model Configuration */}
+      {/* Per-Agent Model Configuration */}
       <div className="section">
-        <h2 className="section-title">🤖 Model Configuration</h2>
+        <h2 className="section-title">
+          <span className="icon">🤖</span>
+          Agent Models
+          <span className="model-badge">Each agent uses its own LLM</span>
+        </h2>
+        <p style={{ fontSize: '13px', color: '#666', marginBottom: '20px' }}>
+          Configure a different model for each agent type. Different tasks benefit from different models.
+        </p>
 
-        <div className="model-grid">
-          {Object.entries(settings.models).map(([agent, model]) => (
-            <div className="form-group" key={agent}>
-              <label>{agent.charAt(0).toUpperCase() + agent.slice(1)} Agent Model</label>
-              <select
-                value={model}
-                onChange={(e) => updateSettings(`models.${agent}`, e.target.value)}
-              >
-                {AVAILABLE_MODELS.map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-              <p className="help-text">
-                {agent === 'search' && 'Perplexity models recommended for real-time search'}
-                {agent === 'email' && 'Fast models like Haiku recommended for quick tasks'}
-              </p>
-            </div>
-          ))}
-        </div>
+        {agentModels.map(agent => (
+          <div className="form-group" key={agent.key}>
+            <label>
+              {agent.name}
+              <span style={{ fontWeight: 400, color: '#888', marginLeft: '8px' }}>
+                — {agent.description}
+              </span>
+            </label>
+            <select
+              value={settings.models[agent.key as keyof typeof settings.models]}
+              onChange={(e) => updateSettings(`models.${agent.key}`, e.target.value)}
+            >
+              {AVAILABLE_MODELS.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            <p className="help-text">Recommended: {agent.recommended}</p>
+          </div>
+        ))}
 
         <button
           className="btn btn-secondary"
           onClick={() => updateSettings('models', { ...DEFAULT_MODELS })}
         >
-          Reset to Defaults
+          Reset to Recommended Defaults
         </button>
+      </div>
+
+      {/* Email Credentials */}
+      <div className="section">
+        <h2 className="section-title">
+          <span className="icon">📧</span>
+          Email Credentials
+        </h2>
+        <p style={{ fontSize: '13px', color: '#666', marginBottom: '20px' }}>
+          Enter your email credentials for the agent to log in via the web interface.
+        </p>
+
+        <div className="row">
+          <div className="form-group">
+            <label>Email Provider</label>
+            <select
+              value={settings.persona?.email?.provider || 'gmail'}
+              onChange={(e) => updateSettings('persona.email.provider', e.target.value)}
+            >
+              {Object.entries(EMAIL_PROVIDERS).map(([key, provider]) => (
+                <option key={key} value={key}>{provider.name}</option>
+              ))}
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Check Frequency (minutes)</label>
+            <input
+              type="number"
+              value={settings.persona?.email?.checkFrequency || 30}
+              onChange={(e) => updateSettings('persona.email.checkFrequency', parseInt(e.target.value))}
+              min={5}
+              max={120}
+            />
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>Email Address</label>
+          <input
+            type="email"
+            value={settings.persona?.email?.email || ''}
+            onChange={(e) => updateSettings('persona.email.email', e.target.value)}
+            placeholder="your.email@gmail.com"
+          />
+        </div>
+
+        <div className="form-group">
+          <label>Email Password</label>
+          <div className="input-group">
+            <input
+              type={showEmailPassword ? 'text' : 'password'}
+              value={settings.persona?.email?.password || ''}
+              onChange={(e) => updateSettings('persona.email.password', e.target.value)}
+              placeholder="Enter your email password"
+            />
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowEmailPassword(!showEmailPassword)}
+              style={{ padding: '12px 16px' }}
+            >
+              {showEmailPassword ? '🙈' : '👁️'}
+            </button>
+          </div>
+          <p className="help-text">
+            Stored locally. Used for webpage-based login only.
+          </p>
+        </div>
+
+        <div className="checkbox-group">
+          <input
+            type="checkbox"
+            checked={settings.persona?.email?.autoCheck || false}
+            onChange={(e) => updateSettings('persona.email.autoCheck', e.target.checked)}
+            id="autoCheck"
+          />
+          <label htmlFor="autoCheck" style={{ marginBottom: 0 }}>
+            Auto-check email periodically
+          </label>
+        </div>
       </div>
 
       {/* Persona Configuration */}
       <div className="section">
-        <h2 className="section-title">👤 Persona Configuration</h2>
+        <h2 className="section-title">
+          <span className="icon">👤</span>
+          Persona Profile
+        </h2>
+        <p style={{ fontSize: '13px', color: '#666', marginBottom: '20px' }}>
+          Configure the simulated persona for authentic browsing behavior.
+        </p>
 
         <div className="row">
           <div className="form-group">
@@ -198,13 +293,14 @@ function Options() {
               type="text"
               value={settings.persona?.name || ''}
               onChange={(e) => updateSettings('persona.name', e.target.value)}
+              placeholder="Alex Smith"
             />
           </div>
           <div className="form-group">
             <label>Age</label>
             <input
               type="number"
-              value={settings.persona?.age || 22}
+              value={settings.persona?.age || 25}
               onChange={(e) => updateSettings('persona.age', parseInt(e.target.value))}
               min={18}
               max={40}
@@ -230,6 +326,7 @@ function Options() {
               type="text"
               value={settings.persona?.occupation || ''}
               onChange={(e) => updateSettings('persona.occupation', e.target.value)}
+              placeholder="Software Developer"
             />
           </div>
         </div>
@@ -241,6 +338,7 @@ function Options() {
               type="text"
               value={settings.persona?.location?.city || ''}
               onChange={(e) => updateSettings('persona.location.city', e.target.value)}
+              placeholder="San Francisco"
             />
           </div>
           <div className="form-group">
@@ -249,6 +347,7 @@ function Options() {
               type="text"
               value={settings.persona?.location?.state || ''}
               onChange={(e) => updateSettings('persona.location.state', e.target.value)}
+              placeholder="CA"
             />
           </div>
         </div>
@@ -258,105 +357,36 @@ function Options() {
           <textarea
             value={settings.persona?.interests?.join(', ') || ''}
             onChange={(e) => updateSettings('persona.interests', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
-            rows={3}
+            rows={2}
+            placeholder="technology, gaming, music, fitness"
           />
         </div>
 
         {settings.persona && (
           <div className="persona-preview">
             <strong>Preview:</strong>
-            <p style={{ marginTop: '8px', color: '#aaa' }}>
-              {settings.persona.name}, {settings.persona.age}-year-old {settings.persona.gender} from{' '}
-              {settings.persona.location?.city}, {settings.persona.location?.state}.{' '}
-              Works as {settings.persona.occupation}.
+            <p style={{ marginTop: '8px', color: '#666' }}>
+              {settings.persona.name || 'Anonymous'}, {settings.persona.age || '?'}-year-old {settings.persona.gender || '?'} from{' '}
+              {settings.persona.location?.city || '?'}, {settings.persona.location?.state || '?'}.{' '}
+              Works as {settings.persona.occupation || '?'}.
             </p>
-            <div style={{ marginTop: '8px' }}>
-              {settings.persona.interests?.slice(0, 8).map(interest => (
-                <span className="tag" key={interest}>{interest}</span>
-              ))}
-            </div>
+            {settings.persona.interests && settings.persona.interests.length > 0 && (
+              <div style={{ marginTop: '10px' }}>
+                {settings.persona.interests.slice(0, 8).map(interest => (
+                  <span className="tag" key={interest}>{interest}</span>
+                ))}
+              </div>
+            )}
           </div>
         )}
-
-        <button
-          className="btn btn-secondary"
-          onClick={generateNewPersona}
-          style={{ marginTop: '12px' }}
-        >
-          🎲 Generate Random Persona
-        </button>
-      </div>
-
-      {/* Email Configuration */}
-      <div className="section">
-        <h2 className="section-title">📧 Email Configuration</h2>
-
-        <div className="row">
-          <div className="form-group">
-            <label>Email Provider</label>
-            <select
-              value={settings.persona?.email?.provider || 'gmail'}
-              onChange={(e) => updateSettings('persona.email.provider', e.target.value)}
-            >
-              {Object.keys(EMAIL_PROVIDERS).map(provider => (
-                <option key={provider} value={provider}>
-                  {EMAIL_PROVIDERS[provider as keyof typeof EMAIL_PROVIDERS].name}
-                </option>
-              ))}
-              <option value="other">Other (custom URL)</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Check Frequency (minutes)</label>
-            <input
-              type="number"
-              value={settings.persona?.email?.checkFrequency || 30}
-              onChange={(e) => updateSettings('persona.email.checkFrequency', parseInt(e.target.value))}
-              min={5}
-              max={120}
-            />
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label>Email Address</label>
-          <input
-            type="email"
-            value={settings.persona?.email?.email || ''}
-            onChange={(e) => updateSettings('persona.email.email', e.target.value)}
-            placeholder="your@email.com"
-          />
-        </div>
-
-        <div className="form-group">
-          <label>Password</label>
-          <input
-            type="password"
-            value={settings.persona?.email?.password || ''}
-            onChange={(e) => updateSettings('persona.email.password', e.target.value)}
-            placeholder="Email password"
-          />
-          <p className="help-text">
-            Stored locally and encrypted. Used for webpage-based login.
-          </p>
-        </div>
-
-        <div className="checkbox-group">
-          <input
-            type="checkbox"
-            checked={settings.persona?.email?.autoCheck || false}
-            onChange={(e) => updateSettings('persona.email.autoCheck', e.target.checked)}
-            id="autoCheck"
-          />
-          <label htmlFor="autoCheck" style={{ marginBottom: 0 }}>
-            Auto-check email periodically
-          </label>
-        </div>
       </div>
 
       {/* Human Simulation */}
       <div className="section">
-        <h2 className="section-title">🎭 Human Simulation</h2>
+        <h2 className="section-title">
+          <span className="icon">🎭</span>
+          Human Simulation
+        </h2>
 
         <div className="checkbox-group form-group">
           <input
@@ -372,7 +402,7 @@ function Options() {
 
         <div className="row">
           <div className="form-group">
-            <label>Typo Rate (0-1)</label>
+            <label>Typo Rate (0-0.1)</label>
             <input
               type="number"
               value={settings.humanization?.typoRate || 0.02}
@@ -381,6 +411,7 @@ function Options() {
               max={0.1}
               step={0.01}
             />
+            <p className="help-text">Probability of making typos when typing</p>
           </div>
           <div className="form-group">
             <label>Typing Speed (WPM)</label>
@@ -391,6 +422,7 @@ function Options() {
               min={20}
               max={120}
             />
+            <p className="help-text">Words per minute when typing</p>
           </div>
         </div>
 
@@ -426,14 +458,17 @@ function Options() {
             id="mouseJitter"
           />
           <label htmlFor="mouseJitter" style={{ marginBottom: 0 }}>
-            Mouse movement jitter
+            Mouse movement with slight jitter
           </label>
         </div>
       </div>
 
       {/* Advanced */}
       <div className="section">
-        <h2 className="section-title">⚙️ Advanced</h2>
+        <h2 className="section-title">
+          <span className="icon">⚙️</span>
+          Advanced
+        </h2>
 
         <div className="checkbox-group form-group">
           <input
@@ -443,7 +478,7 @@ function Options() {
             id="autoStart"
           />
           <label htmlFor="autoStart" style={{ marginBottom: 0 }}>
-            Auto-start browsing on extension load
+            Auto-start browsing when extension loads
           </label>
         </div>
 
@@ -456,6 +491,7 @@ function Options() {
             min={1}
             max={4}
           />
+          <p className="help-text">Maximum number of agents running simultaneously</p>
         </div>
 
         <div className="checkbox-group">
@@ -484,7 +520,7 @@ function Options() {
           className="btn btn-secondary"
           onClick={loadSettings}
         >
-          Reset Changes
+          Discard Changes
         </button>
       </div>
 

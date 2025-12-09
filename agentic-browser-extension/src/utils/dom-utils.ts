@@ -234,9 +234,10 @@ export function extractForms(): FormInfo[] {
 
     form.querySelectorAll('input, select, textarea').forEach(field => {
       const input = field as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      const placeholder = (input as HTMLInputElement).placeholder || '';
       const label = form.querySelector(`label[for="${input.id}"]`)?.textContent?.trim() ||
                     input.getAttribute('aria-label') ||
-                    input.placeholder ||
+                    placeholder ||
                     input.name;
 
       const fieldInfo: FormField = {

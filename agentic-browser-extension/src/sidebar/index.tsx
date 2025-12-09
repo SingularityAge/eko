@@ -20,35 +20,36 @@ interface AppState {
   isInitialized: boolean;
 }
 
-// Styles
+// Styles - Light Mode with Anthropic Claude styling
 const styles = `
   .sidebar {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: #1a1a2e;
+    background: #FFFFFF;
   }
 
   .header {
     padding: 16px;
-    background: #2a2a4a;
-    border-bottom: 1px solid #333;
+    background: #FAFAFA;
+    border-bottom: 1px solid #E5E5E5;
   }
 
   .header h1 {
     font-size: 18px;
     margin-bottom: 4px;
+    color: #1a1a1a;
   }
 
   .header p {
     font-size: 12px;
-    color: #888;
+    color: #666;
   }
 
   .tabs {
     display: flex;
-    background: #2a2a4a;
-    border-bottom: 1px solid #333;
+    background: #FAFAFA;
+    border-bottom: 1px solid #E5E5E5;
   }
 
   .tab {
@@ -56,26 +57,27 @@ const styles = `
     padding: 12px;
     border: none;
     background: transparent;
-    color: #888;
+    color: #666;
     cursor: pointer;
     font-size: 13px;
     transition: all 0.2s;
   }
 
   .tab:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.05);
+    color: #1a1a1a;
+    background: #F0F0F0;
   }
 
   .tab.active {
-    color: #4CAF50;
-    border-bottom: 2px solid #4CAF50;
+    color: #DA7756;
+    border-bottom: 2px solid #DA7756;
   }
 
   .content {
     flex: 1;
     overflow-y: auto;
     padding: 16px;
+    background: #FFFFFF;
   }
 
   .section {
@@ -99,39 +101,45 @@ const styles = `
   .task-input input {
     flex: 1;
     padding: 12px;
-    border: 1px solid #333;
+    border: 1px solid #E5E5E5;
     border-radius: 8px;
-    background: #2a2a4a;
-    color: #fff;
+    background: #FFFFFF;
+    color: #1a1a1a;
     font-size: 14px;
   }
 
   .task-input input:focus {
     outline: none;
-    border-color: #4CAF50;
+    border-color: #DA7756;
+  }
+
+  .task-input input::placeholder {
+    color: #999;
   }
 
   .task-input button {
     padding: 12px 20px;
     border: none;
     border-radius: 8px;
-    background: #4CAF50;
+    background: #DA7756;
     color: white;
     cursor: pointer;
     font-weight: 500;
   }
 
   .task-input button:hover {
-    background: #43a047;
+    background: #C96A4A;
   }
 
   .task-input button:disabled {
-    background: #333;
+    background: #E5E5E5;
+    color: #999;
     cursor: not-allowed;
   }
 
   .agent-card {
-    background: #2a2a4a;
+    background: #FAFAFA;
+    border: 1px solid #E5E5E5;
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 12px;
@@ -154,10 +162,10 @@ const styles = `
     font-size: 18px;
   }
 
-  .agent-icon.browsing { background: rgba(33, 150, 243, 0.2); }
-  .agent-icon.search { background: rgba(255, 193, 7, 0.2); }
-  .agent-icon.social { background: rgba(233, 30, 99, 0.2); }
-  .agent-icon.email { background: rgba(156, 39, 176, 0.2); }
+  .agent-icon.browsing { background: rgba(33, 150, 243, 0.15); }
+  .agent-icon.search { background: rgba(255, 152, 0, 0.15); }
+  .agent-icon.social { background: rgba(233, 30, 99, 0.15); }
+  .agent-icon.email { background: rgba(156, 39, 176, 0.15); }
 
   .agent-info {
     flex: 1;
@@ -166,6 +174,7 @@ const styles = `
   .agent-info h3 {
     font-size: 14px;
     margin-bottom: 2px;
+    color: #1a1a1a;
   }
 
   .agent-status {
@@ -174,11 +183,11 @@ const styles = `
   }
 
   .agent-status.running {
-    color: #4CAF50;
+    color: #DA7756;
   }
 
   .agent-status.error {
-    color: #f44336;
+    color: #E53935;
   }
 
   .agent-controls {
@@ -188,33 +197,41 @@ const styles = `
 
   .agent-btn {
     padding: 6px 12px;
-    border: none;
+    border: 1px solid #E5E5E5;
     border-radius: 4px;
-    background: #444;
-    color: #fff;
+    background: #FFFFFF;
+    color: #1a1a1a;
     cursor: pointer;
     font-size: 12px;
   }
 
   .agent-btn:hover {
-    background: #555;
+    background: #F5F5F5;
+    border-color: #DA7756;
   }
 
   .agent-btn.stop {
-    background: #f44336;
+    background: #E53935;
+    border-color: #E53935;
+    color: white;
+  }
+
+  .agent-btn.stop:hover {
+    background: #C62828;
   }
 
   .agent-task {
     font-size: 12px;
-    color: #aaa;
+    color: #666;
     margin-top: 8px;
     padding: 8px;
-    background: #1a1a2e;
+    background: #F5F5F5;
     border-radius: 4px;
   }
 
   .log-container {
-    background: #1a1a2e;
+    background: #F5F5F5;
+    border: 1px solid #E5E5E5;
     border-radius: 8px;
     max-height: 300px;
     overflow-y: auto;
@@ -222,8 +239,9 @@ const styles = `
 
   .log-entry {
     padding: 8px 12px;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid #E5E5E5;
     font-size: 12px;
+    color: #1a1a1a;
   }
 
   .log-entry:last-child {
@@ -231,7 +249,7 @@ const styles = `
   }
 
   .log-time {
-    color: #666;
+    color: #888;
     margin-right: 8px;
   }
 
@@ -243,17 +261,18 @@ const styles = `
     margin-right: 8px;
   }
 
-  .log-type.tool_call { background: rgba(33, 150, 243, 0.2); color: #2196F3; }
-  .log-type.tool_result { background: rgba(76, 175, 80, 0.2); color: #4CAF50; }
-  .log-type.message { background: rgba(255, 193, 7, 0.2); color: #FFC107; }
-  .log-type.error { background: rgba(244, 67, 54, 0.2); color: #f44336; }
+  .log-type.tool_call { background: rgba(33, 150, 243, 0.15); color: #1976D2; }
+  .log-type.tool_result { background: rgba(218, 119, 86, 0.15); color: #DA7756; }
+  .log-type.message { background: rgba(255, 193, 7, 0.15); color: #F57C00; }
+  .log-type.error { background: rgba(229, 57, 53, 0.15); color: #E53935; }
 
   .activity-item {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 10px;
-    background: #2a2a4a;
+    background: #FAFAFA;
+    border: 1px solid #E5E5E5;
     border-radius: 6px;
     margin-bottom: 8px;
   }
@@ -265,7 +284,7 @@ const styles = `
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #333;
+    background: #F0F0F0;
     font-size: 14px;
   }
 
@@ -276,6 +295,7 @@ const styles = `
   .activity-info h4 {
     font-size: 13px;
     margin-bottom: 2px;
+    color: #1a1a1a;
   }
 
   .activity-info p {
@@ -285,11 +305,12 @@ const styles = `
 
   .activity-time {
     font-size: 10px;
-    color: #666;
+    color: #888;
   }
 
   .persona-card {
-    background: #2a2a4a;
+    background: #FAFAFA;
+    border: 1px solid #E5E5E5;
     border-radius: 8px;
     padding: 16px;
   }
@@ -304,22 +325,24 @@ const styles = `
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #4CAF50, #2196F3);
+    background: #DA7756;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 20px;
     font-weight: bold;
+    color: white;
   }
 
   .persona-details h3 {
     font-size: 16px;
     margin-bottom: 4px;
+    color: #1a1a1a;
   }
 
   .persona-details p {
     font-size: 12px;
-    color: #888;
+    color: #666;
   }
 
   .persona-stats {
@@ -330,10 +353,11 @@ const styles = `
   }
 
   .persona-stat {
-    background: #1a1a2e;
+    background: #F5F5F5;
     padding: 8px;
     border-radius: 6px;
     font-size: 11px;
+    color: #1a1a1a;
   }
 
   .persona-stat span {
@@ -348,18 +372,25 @@ const styles = `
 
   .quick-btn {
     padding: 16px;
-    border: none;
+    border: 1px solid #E5E5E5;
     border-radius: 8px;
-    background: #2a2a4a;
-    color: #fff;
+    background: #FAFAFA;
+    color: #1a1a1a;
     cursor: pointer;
     text-align: center;
     transition: all 0.2s;
   }
 
   .quick-btn:hover {
-    background: #3a3a5a;
+    background: #F0F0F0;
+    border-color: #DA7756;
     transform: translateY(-1px);
+  }
+
+  .quick-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
   }
 
   .quick-btn .icon {
@@ -375,7 +406,7 @@ const styles = `
   .empty-state {
     text-align: center;
     padding: 40px;
-    color: #666;
+    color: #888;
   }
 
   .empty-state .icon {
@@ -518,9 +549,9 @@ function Sidebar() {
           <h1>Agentic Browser</h1>
           <p>
             {state?.isInitialized ? (
-              <span style={{ color: '#4CAF50' }}>● Connected</span>
+              <span style={{ color: '#DA7756' }}>● Connected</span>
             ) : (
-              <span style={{ color: '#f44336' }}>● Not configured</span>
+              <span style={{ color: '#E53935' }}>● Not configured</span>
             )}
           </p>
         </div>
@@ -761,9 +792,10 @@ function Sidebar() {
                           key={interest}
                           style={{
                             padding: '4px 8px',
-                            background: '#333',
+                            background: '#F0F0F0',
                             borderRadius: '12px',
-                            fontSize: '11px'
+                            fontSize: '11px',
+                            color: '#1a1a1a'
                           }}
                         >
                           {interest}
@@ -780,10 +812,10 @@ function Sidebar() {
                           key={p.name}
                           style={{
                             padding: '4px 8px',
-                            background: p.usage === 'primary' ? 'rgba(76, 175, 80, 0.2)' : '#333',
+                            background: p.usage === 'primary' ? 'rgba(218, 119, 86, 0.15)' : '#F0F0F0',
                             borderRadius: '12px',
                             fontSize: '11px',
-                            color: p.usage === 'primary' ? '#4CAF50' : '#fff'
+                            color: p.usage === 'primary' ? '#DA7756' : '#1a1a1a'
                           }}
                         >
                           {p.name}
@@ -797,10 +829,10 @@ function Sidebar() {
                       width: '100%',
                       marginTop: '16px',
                       padding: '10px',
-                      border: 'none',
+                      border: '1px solid #E5E5E5',
                       borderRadius: '6px',
-                      background: '#444',
-                      color: '#fff',
+                      background: '#FAFAFA',
+                      color: '#1a1a1a',
                       cursor: 'pointer'
                     }}
                     onClick={() => chrome.runtime.openOptionsPage()}
@@ -818,7 +850,7 @@ function Sidebar() {
                       padding: '10px 20px',
                       border: 'none',
                       borderRadius: '6px',
-                      background: '#4CAF50',
+                      background: '#DA7756',
                       color: '#fff',
                       cursor: 'pointer'
                     }}

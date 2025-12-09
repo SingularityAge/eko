@@ -26,6 +26,29 @@ import {
 
 import { ExtensionMessage, DOMElement } from '../shared/types';
 
+// Helper to normalize URLs (add https:// if missing)
+function normalizeUrl(url: string): string {
+  if (!url) return url;
+
+  // Already has protocol
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  // Handle protocol-relative URLs
+  if (url.startsWith('//')) {
+    return 'https:' + url;
+  }
+
+  // Handle javascript: and other special protocols
+  if (url.includes(':') && !url.includes('.')) {
+    return url;
+  }
+
+  // Add https:// by default
+  return 'https://' + url;
+}
+
 // Global instances
 let mouseEmulator: MouseEmulator;
 let keyboardEmulator: KeyboardEmulator;
@@ -83,7 +106,11 @@ async function handleMessage(message: ExtensionMessage): Promise<any> {
       return waitForElementAction(message.payload);
 
     case 'NAVIGATE_TO':
-      window.location.href = message.payload.url;
+      // Use background script for navigation to avoid extension URL issues
+      chrome.runtime.sendMessage({
+        type: 'DO_NAVIGATE',
+        payload: { url: normalizeUrl(message.payload.url) }
+      });
       return 'Navigating...';
 
     case 'TAKE_SCREENSHOT':
@@ -107,8 +134,13 @@ async function executeTool(payload: { tool: string; args: Record<string, any> })
 
   switch (tool) {
     case 'navigate_to':
-      window.location.href = args.url;
-      return `Navigating to ${args.url}`;
+      const navUrl = normalizeUrl(args.url);
+      // Use background script for navigation
+      chrome.runtime.sendMessage({
+        type: 'DO_NAVIGATE',
+        payload: { url: navUrl }
+      });
+      return `Navigating to ${navUrl}`;
 
     case 'click_element':
       return clickElement({ index: args.index });

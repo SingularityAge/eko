@@ -192,6 +192,10 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
     case 'NAVIGATE_TO':
       return navigateTo(message.payload.url, tabId);
 
+    case 'DO_NAVIGATE':
+      // Handle navigation from content script with proper URL normalization
+      return doNavigate(message.payload.url, tabId);
+
     default:
       throw new Error(`Unknown message type: ${message.type}`);
   }
@@ -473,14 +477,52 @@ function waitForNavigation(tabId: number, timeout: number = 30000): Promise<void
   });
 }
 
+// Normalize URL (add https:// if missing)
+function normalizeUrl(url: string): string {
+  if (!url) return url;
+
+  // Already has protocol
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+
+  // Handle protocol-relative URLs
+  if (url.startsWith('//')) {
+    return 'https:' + url;
+  }
+
+  // Handle javascript: and other special protocols
+  if (url.includes(':') && !url.includes('.')) {
+    return url;
+  }
+
+  // Add https:// by default
+  return 'https://' + url;
+}
+
 // Navigate to URL
 async function navigateTo(url: string, tabId?: number): Promise<void> {
+  const normalizedUrl = normalizeUrl(url);
   const targetTabId = tabId || (await getActiveTabId());
   if (!targetTabId) {
     // Open in new tab
-    await chrome.tabs.create({ url });
+    await chrome.tabs.create({ url: normalizedUrl });
   } else {
-    await chrome.tabs.update(targetTabId, { url });
+    await chrome.tabs.update(targetTabId, { url: normalizedUrl });
+  }
+}
+
+// Handle navigation from content script
+async function doNavigate(url: string, tabId?: number): Promise<{ result: string }> {
+  const normalizedUrl = normalizeUrl(url);
+  const targetTabId = tabId || (await getActiveTabId());
+
+  if (targetTabId) {
+    await chrome.tabs.update(targetTabId, { url: normalizedUrl });
+    return { result: `Navigating to ${normalizedUrl}` };
+  } else {
+    await chrome.tabs.create({ url: normalizedUrl });
+    return { result: `Opening ${normalizedUrl} in new tab` };
   }
 }
 
@@ -495,7 +537,11 @@ async function takeScreenshot(tabId?: number): Promise<string> {
   // Make sure the tab is active
   await chrome.tabs.update(targetTabId, { active: true });
 
-  const dataUrl = await chrome.tabs.captureVisibleTab(undefined, {
+  // Get the current window
+  const tab = await chrome.tabs.get(targetTabId);
+  const windowId = tab.windowId;
+
+  const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
     format: 'png'
   });
 
