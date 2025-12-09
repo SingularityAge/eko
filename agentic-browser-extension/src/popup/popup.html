@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentic Browser</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      width: 350px;
+      background: #1a1a2e;
+      color: #eee;
+    }
+
+    .container {
+      padding: 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #333;
+    }
+
+    .logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #4CAF50, #2196F3);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 18px;
+    }
+
+    .title {
+      flex: 1;
+    }
+
+    .title h1 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .title p {
+      font-size: 11px;
+      color: #888;
+    }
+
+    .status-badge {
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .status-badge.active {
+      background: rgba(76, 175, 80, 0.2);
+      color: #4CAF50;
+    }
+
+    .status-badge.inactive {
+      background: rgba(158, 158, 158, 0.2);
+      color: #9e9e9e;
+    }
+
+    .quick-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .action-btn {
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: #2a2a4a;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      background: #3a3a5a;
+      transform: translateY(-1px);
+    }
+
+    .action-btn:active {
+      transform: translateY(0);
+    }
+
+    .action-btn .icon {
+      font-size: 20px;
+    }
+
+    .action-btn span {
+      font-size: 11px;
+    }
+
+    .section {
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #888;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .persona-card {
+      background: #2a2a4a;
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .persona-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .persona-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4CAF50, #2196F3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .persona-info h3 {
+      font-size: 14px;
+    }
+
+    .persona-info p {
+      font-size: 11px;
+      color: #888;
+    }
+
+    .persona-stats {
+      display: flex;
+      gap: 16px;
+      font-size: 11px;
+      color: #aaa;
+    }
+
+    .agent-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .agent-item {
+      background: #2a2a4a;
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .agent-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .agent-icon.browsing { background: rgba(33, 150, 243, 0.2); }
+    .agent-icon.search { background: rgba(255, 193, 7, 0.2); }
+    .agent-icon.social { background: rgba(233, 30, 99, 0.2); }
+    .agent-icon.email { background: rgba(156, 39, 176, 0.2); }
+
+    .agent-info {
+      flex: 1;
+    }
+
+    .agent-info h4 {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .agent-info p {
+      font-size: 10px;
+      color: #888;
+    }
+
+    .agent-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+    }
+
+    .agent-status.running {
+      background: #4CAF50;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .footer {
+      display: flex;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid #333;
+    }
+
+    .footer-btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      background: #2a2a4a;
+      color: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .footer-btn:hover {
+      background: #3a3a5a;
+    }
+
+    .footer-btn.primary {
+      background: #4CAF50;
+    }
+
+    .footer-btn.primary:hover {
+      background: #43a047;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

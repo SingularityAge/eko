@@ -1,0 +1,580 @@
+// ============================================
+// Background Service Worker
+// Main orchestrator for the agentic browser extension
+// ============================================
+
+import { initOpenRouterService, OpenRouterService } from '../services/openrouter';
+import { PersonaEngine, getPersonaEngine } from '../services/persona-engine';
+import { BrowsingAgent } from '../agents/browsing-agent';
+import { SearchAgent } from '../agents/search-agent';
+import { SocialAgent } from '../agents/social-agent';
+import { EmailAgent } from '../agents/email-agent';
+import {
+  ExtensionMessage,
+  ExtensionSettings,
+  AgentState,
+  Activity,
+  PersonaProfile,
+  STORAGE_KEYS,
+  DEFAULT_MODELS
+} from '../shared/types';
+
+// Global state
+let settings: ExtensionSettings | null = null;
+let llmService: OpenRouterService | null = null;
+let personaEngine: PersonaEngine | null = null;
+
+// Agents
+let browsingAgent: BrowsingAgent | null = null;
+let searchAgent: SearchAgent | null = null;
+let socialAgent: SocialAgent | null = null;
+let emailAgent: EmailAgent | null = null;
+
+// Activity log
+const activities: Activity[] = [];
+const MAX_ACTIVITIES = 1000;
+
+// Initialization
+async function initialize(): Promise<void> {
+  console.log('Initializing Agentic Browser Extension...');
+
+  // Load settings
+  await loadSettings();
+
+  // Initialize services if API key is set
+  if (settings?.openRouterApiKey) {
+    initializeServices();
+  }
+
+  console.log('Agentic Browser Extension initialized');
+}
+
+// Load settings from storage
+async function loadSettings(): Promise<void> {
+  const result = await chrome.storage.local.get([STORAGE_KEYS.SETTINGS, STORAGE_KEYS.ACTIVITIES]);
+
+  if (result[STORAGE_KEYS.SETTINGS]) {
+    settings = result[STORAGE_KEYS.SETTINGS];
+  } else {
+    // Default settings
+    settings = {
+      openRouterApiKey: '',
+      models: { ...DEFAULT_MODELS },
+      persona: createDefaultPersona(),
+      autoStart: false,
+      maxConcurrentAgents: 2,
+      debugMode: false,
+      humanization: {
+        enabled: true,
+        typoRate: 0.02,
+        thinkingPauses: true,
+        naturalScrolling: true,
+        mouseJitter: true
+      }
+    };
+  }
+
+  // Load activities
+  if (result[STORAGE_KEYS.ACTIVITIES]) {
+    activities.push(...result[STORAGE_KEYS.ACTIVITIES]);
+  }
+}
+
+// Save settings to storage
+async function saveSettings(): Promise<void> {
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.SETTINGS]: settings
+  });
+}
+
+// Save activities to storage
+async function saveActivities(): Promise<void> {
+  // Keep only recent activities
+  const recentActivities = activities.slice(-MAX_ACTIVITIES);
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.ACTIVITIES]: recentActivities
+  });
+}
+
+// Create default persona
+function createDefaultPersona(): PersonaProfile {
+  const engine = getPersonaEngine();
+  return engine.generatePersona();
+}
+
+// Initialize LLM service and agents
+function initializeServices(): void {
+  if (!settings?.openRouterApiKey) return;
+
+  // Initialize LLM service
+  llmService = initOpenRouterService(
+    settings.openRouterApiKey,
+    settings.models.browsing
+  );
+
+  // Initialize persona engine
+  personaEngine = getPersonaEngine();
+  if (settings.persona) {
+    personaEngine.setPersona(settings.persona);
+  }
+
+  // Initialize agents
+  browsingAgent = new BrowsingAgent(llmService, settings.models.browsing, personaEngine);
+  searchAgent = new SearchAgent(llmService, settings.models.browsing, settings.models.search);
+  socialAgent = new SocialAgent(llmService, settings.models.social, personaEngine);
+  emailAgent = new EmailAgent(llmService, settings.models.email);
+
+  // Set email config if available
+  if (settings.persona?.email) {
+    emailAgent.setEmailConfig(settings.persona.email);
+  }
+
+  // Set social credentials if available
+  if (settings.persona?.socialMedia?.platforms) {
+    for (const platform of settings.persona.socialMedia.platforms) {
+      if (platform.username && platform.password) {
+        socialAgent.setCredentials(platform.name, platform.username, platform.password);
+      }
+    }
+  }
+}
+
+// Message handler
+chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
+  handleMessage(message, sender)
+    .then(result => sendResponse(result))
+    .catch(error => sendResponse({ error: error.message }));
+
+  return true;
+});
+
+// Handle messages from content scripts and UI
+async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.MessageSender): Promise<any> {
+  const tabId = sender.tab?.id || message.tabId;
+
+  switch (message.type) {
+    case 'GET_STATE':
+      return getState();
+
+    case 'SET_STATE':
+      return setState(message.payload);
+
+    case 'UPDATE_SETTINGS':
+      return updateSettings(message.payload);
+
+    case 'START_AGENT':
+      return startAgent(message.payload.agentType, message.payload.task, tabId);
+
+    case 'STOP_AGENT':
+      return stopAgent(message.payload.agentType);
+
+    case 'PAUSE_AGENT':
+      return pauseAgent(message.payload.agentType);
+
+    case 'RESUME_AGENT':
+      return resumeAgent(message.payload.agentType);
+
+    case 'EXECUTE_TASK':
+      return executeTask(message.payload.task, tabId);
+
+    case 'EXECUTE_TOOL':
+      return executeToolOnTab(message.payload, tabId);
+
+    case 'GET_ACTIVITIES':
+      return getActivities(message.payload?.limit);
+
+    case 'ACTIVITY_LOG':
+      return logActivity(message.payload);
+
+    case 'TAKE_SCREENSHOT':
+      return takeScreenshot(tabId);
+
+    case 'NAVIGATE_TO':
+      return navigateTo(message.payload.url, tabId);
+
+    default:
+      throw new Error(`Unknown message type: ${message.type}`);
+  }
+}
+
+// Get current state
+function getState(): any {
+  return {
+    settings,
+    agents: {
+      browsing: browsingAgent?.getState() || null,
+      search: searchAgent?.getState() || null,
+      social: socialAgent?.getState() || null,
+      email: emailAgent?.getState() || null
+    },
+    persona: personaEngine?.getPersona() || null,
+    isInitialized: !!llmService
+  };
+}
+
+// Set state (partial update)
+async function setState(payload: any): Promise<void> {
+  if (payload.settings) {
+    settings = { ...settings, ...payload.settings } as ExtensionSettings;
+    await saveSettings();
+    initializeServices();
+  }
+
+  if (payload.persona && personaEngine) {
+    personaEngine.setPersona(payload.persona);
+    if (settings) {
+      settings.persona = payload.persona;
+      await saveSettings();
+    }
+  }
+}
+
+// Update settings
+async function updateSettings(newSettings: Partial<ExtensionSettings>): Promise<void> {
+  settings = { ...settings, ...newSettings } as ExtensionSettings;
+  await saveSettings();
+
+  // Re-initialize services if API key changed
+  if (newSettings.openRouterApiKey !== undefined) {
+    initializeServices();
+  }
+
+  // Update content script settings
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id) {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'UPDATE_SETTINGS',
+        payload: settings
+      }).catch(() => {
+        // Tab might not have content script
+      });
+    }
+  }
+}
+
+// Start an agent
+async function startAgent(
+  agentType: string,
+  task?: string,
+  tabId?: number
+): Promise<any> {
+  if (!llmService) {
+    throw new Error('Services not initialized. Please set your OpenRouter API key.');
+  }
+
+  const activeTabId = tabId || (await getActiveTabId());
+  if (!activeTabId) {
+    throw new Error('No active tab found');
+  }
+
+  // Get page state
+  const pageState = await getPageState(activeTabId);
+
+  let agent: any;
+  switch (agentType) {
+    case 'browsing':
+      agent = browsingAgent;
+      break;
+    case 'search':
+      agent = searchAgent;
+      break;
+    case 'social':
+      agent = socialAgent;
+      break;
+    case 'email':
+      agent = emailAgent;
+      break;
+    default:
+      throw new Error(`Unknown agent type: ${agentType}`);
+  }
+
+  if (!agent) {
+    throw new Error(`Agent ${agentType} not initialized`);
+  }
+
+  // Set context
+  agent.setContext({
+    tabId: activeTabId,
+    url: pageState.url,
+    pageContent: pageState.content,
+    domTree: pageState.domTree
+  });
+
+  // Run agent
+  if (task) {
+    return agent.run(task, (update: any) => {
+      // Broadcast updates to sidebar
+      broadcastUpdate({
+        type: 'AGENT_UPDATE',
+        payload: {
+          agentType,
+          ...update
+        }
+      });
+    });
+  }
+
+  return { status: 'Agent started', state: agent.getState() };
+}
+
+// Stop an agent
+function stopAgent(agentType: string): void {
+  const agent = getAgent(agentType);
+  if (agent) {
+    agent.stop();
+  }
+}
+
+// Pause an agent
+function pauseAgent(agentType: string): void {
+  const agent = getAgent(agentType);
+  if (agent) {
+    agent.pause();
+  }
+}
+
+// Resume an agent
+function resumeAgent(agentType: string): void {
+  const agent = getAgent(agentType);
+  if (agent) {
+    agent.resume();
+  }
+}
+
+// Get agent by type
+function getAgent(agentType: string): any {
+  switch (agentType) {
+    case 'browsing':
+      return browsingAgent;
+    case 'search':
+      return searchAgent;
+    case 'social':
+      return socialAgent;
+    case 'email':
+      return emailAgent;
+    default:
+      return null;
+  }
+}
+
+// Execute a task (auto-select agent)
+async function executeTask(task: string, tabId?: number): Promise<any> {
+  // Analyze task to determine best agent
+  const taskLower = task.toLowerCase();
+
+  let agentType = 'browsing';
+
+  if (taskLower.includes('search') || taskLower.includes('find') || taskLower.includes('research')) {
+    agentType = 'search';
+  } else if (taskLower.includes('email') || taskLower.includes('mail') || taskLower.includes('inbox')) {
+    agentType = 'email';
+  } else if (
+    taskLower.includes('instagram') ||
+    taskLower.includes('twitter') ||
+    taskLower.includes('facebook') ||
+    taskLower.includes('social') ||
+    taskLower.includes('tiktok') ||
+    taskLower.includes('reddit')
+  ) {
+    agentType = 'social';
+  }
+
+  return startAgent(agentType, task, tabId);
+}
+
+// Execute tool on a specific tab
+async function executeToolOnTab(
+  payload: { tool: string; args: Record<string, any>; tabId?: number },
+  tabId?: number
+): Promise<any> {
+  const targetTabId = payload.tabId || tabId || (await getActiveTabId());
+  if (!targetTabId) {
+    throw new Error('No target tab');
+  }
+
+  // Special handling for navigation
+  if (payload.tool === 'navigate_to') {
+    await chrome.tabs.update(targetTabId, { url: payload.args.url });
+    await waitForNavigation(targetTabId);
+    return { result: `Navigated to ${payload.args.url}` };
+  }
+
+  // Special handling for screenshot
+  if (payload.tool === 'take_screenshot') {
+    return takeScreenshot(targetTabId);
+  }
+
+  // Send to content script
+  const response = await chrome.tabs.sendMessage(targetTabId, {
+    type: 'EXECUTE_TOOL',
+    payload
+  });
+
+  return response;
+}
+
+// Get page state from tab
+async function getPageState(tabId: number): Promise<any> {
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: 'GET_PAGE_STATE'
+    });
+
+    const domResponse = await chrome.tabs.sendMessage(tabId, {
+      type: 'EXTRACT_PAGE_CONTENT'
+    });
+
+    return {
+      url: response.url,
+      title: response.title,
+      domain: response.domain,
+      content: domResponse,
+      domTree: response.elements?.map((e: any) =>
+        `[${e.index}]:<${e.tagName}>${e.text}</${e.tagName}>`
+      ).join('\n')
+    };
+  } catch (error) {
+    // Content script might not be loaded
+    const tab = await chrome.tabs.get(tabId);
+    return {
+      url: tab.url,
+      title: tab.title,
+      domain: new URL(tab.url || '').hostname,
+      content: '',
+      domTree: ''
+    };
+  }
+}
+
+// Get active tab ID
+async function getActiveTabId(): Promise<number | undefined> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab?.id;
+}
+
+// Wait for navigation to complete
+function waitForNavigation(tabId: number, timeout: number = 30000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.webNavigation.onCompleted.removeListener(listener);
+      reject(new Error('Navigation timeout'));
+    }, timeout);
+
+    const listener = (details: chrome.webNavigation.WebNavigationFramedCallbackDetails) => {
+      if (details.tabId === tabId && details.frameId === 0) {
+        clearTimeout(timer);
+        chrome.webNavigation.onCompleted.removeListener(listener);
+        setTimeout(resolve, 500); // Extra wait for page to stabilize
+      }
+    };
+
+    chrome.webNavigation.onCompleted.addListener(listener);
+  });
+}
+
+// Navigate to URL
+async function navigateTo(url: string, tabId?: number): Promise<void> {
+  const targetTabId = tabId || (await getActiveTabId());
+  if (!targetTabId) {
+    // Open in new tab
+    await chrome.tabs.create({ url });
+  } else {
+    await chrome.tabs.update(targetTabId, { url });
+  }
+}
+
+// Take screenshot
+async function takeScreenshot(tabId?: number): Promise<string> {
+  const targetTabId = tabId || (await getActiveTabId());
+
+  if (!targetTabId) {
+    throw new Error('No tab to screenshot');
+  }
+
+  // Make sure the tab is active
+  await chrome.tabs.update(targetTabId, { active: true });
+
+  const dataUrl = await chrome.tabs.captureVisibleTab(undefined, {
+    format: 'png'
+  });
+
+  return dataUrl;
+}
+
+// Log activity
+async function logActivity(activity: Partial<Activity>): Promise<void> {
+  const fullActivity: Activity = {
+    id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    type: activity.type || 'page_visit',
+    timestamp: Date.now(),
+    details: {},
+    ...activity
+  };
+
+  activities.push(fullActivity);
+
+  // Trim old activities
+  while (activities.length > MAX_ACTIVITIES) {
+    activities.shift();
+  }
+
+  // Save periodically (every 10 activities)
+  if (activities.length % 10 === 0) {
+    await saveActivities();
+  }
+
+  // Broadcast to sidebar
+  broadcastUpdate({
+    type: 'ACTIVITY_LOG',
+    payload: fullActivity
+  });
+}
+
+// Get activities
+function getActivities(limit?: number): Activity[] {
+  const count = limit || 100;
+  return activities.slice(-count);
+}
+
+// Broadcast update to all extension pages
+async function broadcastUpdate(message: any): Promise<void> {
+  // Send to sidebar/popup
+  chrome.runtime.sendMessage(message).catch(() => {
+    // No listeners
+  });
+}
+
+// Alarm handler for periodic tasks
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'email_check' && emailAgent && settings?.persona?.email?.autoCheck) {
+    if (emailAgent.shouldCheck()) {
+      try {
+        await startAgent('email', 'Check inbox for new emails');
+      } catch (error) {
+        console.error('Email check failed:', error);
+      }
+    }
+  }
+
+  if (alarm.name === 'activity_save') {
+    await saveActivities();
+  }
+});
+
+// Set up alarms
+chrome.alarms.create('email_check', { periodInMinutes: 30 });
+chrome.alarms.create('activity_save', { periodInMinutes: 5 });
+
+// Initialize on load
+initialize();
+
+// Handle extension install/update
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install') {
+    // Open options page on first install
+    chrome.runtime.openOptionsPage();
+  }
+});
+
+console.log('Background service worker loaded');
