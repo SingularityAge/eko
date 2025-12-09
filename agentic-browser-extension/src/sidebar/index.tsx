@@ -275,6 +275,12 @@ const styles = `
     border: 1px solid #E5E5E5;
     border-radius: 6px;
     margin-bottom: 8px;
+    transition: all 0.15s;
+  }
+
+  .activity-item.clickable:hover {
+    background: #F0F0F0;
+    border-color: #DA7756;
   }
 
   .activity-icon {
@@ -731,13 +737,26 @@ function Sidebar() {
                 </div>
               ) : (
                 activities.map(activity => (
-                  <div className="activity-item" key={activity.id}>
+                  <div
+                    className={`activity-item ${activity.url ? 'clickable' : ''}`}
+                    key={activity.id}
+                    onClick={() => {
+                      if (activity.url) {
+                        chrome.tabs.create({ url: activity.url });
+                      }
+                    }}
+                    style={{ cursor: activity.url ? 'pointer' : 'default' }}
+                  >
                     <div className="activity-icon">
                       {getActivityIcon(activity.type)}
                     </div>
                     <div className="activity-info">
-                      <h4>{activity.type.replace('_', ' ')}</h4>
-                      <p>{activity.url || activity.details?.query || '-'}</p>
+                      <h4>{activity.type.replace(/_/g, ' ')}</h4>
+                      <p title={activity.url || activity.details?.query || ''}>
+                        {activity.url
+                          ? new URL(activity.url).hostname.replace('www.', '')
+                          : activity.details?.query || '-'}
+                      </p>
                     </div>
                     <div className="activity-time">
                       {formatTime(activity.timestamp)}
