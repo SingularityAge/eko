@@ -4,3 +4,4 @@ packages:
   - "packages/eko-nodejs"
   - "packages/eko-web"
   - "example/*"
+  - "agentic-browser-extension"
