@@ -296,21 +296,10 @@ When researching:
       return this.executeGoogleSearch('google_search', { query });
     }
 
-    // Send other tools to content script
-    const response = await chrome.runtime.sendMessage({
-      type: 'EXECUTE_TOOL',
-      payload: {
-        tool: name,
-        args,
-        tabId: this.context.tabId
-      }
-    });
+    // Use executeTool which handles both direct and message-based execution
+    const response = await this.executeTool(name, args);
 
-    if (response.error) {
-      throw new Error(response.error);
-    }
-
-    return response.result || 'Action completed';
+    return response?.result || 'Action completed';
   }
 
   private async executePerplexitySearch(args: Record<string, any>): Promise<string> {
@@ -372,15 +361,8 @@ When researching:
         break;
     }
 
-    // Navigate to search page
-    const response = await chrome.runtime.sendMessage({
-      type: 'EXECUTE_TOOL',
-      payload: {
-        tool: 'navigate_to',
-        args: { url },
-        tabId: this.context.tabId
-      }
-    });
+    // Navigate to search page using executeTool
+    await this.executeTool('navigate_to', { url });
 
     this.logActivity({
       type: 'search',

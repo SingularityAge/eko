@@ -23,6 +23,9 @@ export interface AgentConfig {
   tools: Tool[];
 }
 
+// Tool executor type for direct execution in background context
+export type ToolExecutor = (tool: string, args: Record<string, any>, tabId?: number) => Promise<any>;
+
 export abstract class BaseAgent {
   protected id: string;
   protected type: AgentType;
@@ -32,6 +35,7 @@ export abstract class BaseAgent {
   protected context: AgentContext;
   protected messages: LLMMessage[];
   protected abortController: AbortController | null = null;
+  protected toolExecutor: ToolExecutor | null = null;
 
   constructor(
     type: AgentType,
@@ -90,6 +94,35 @@ export abstract class BaseAgent {
   // Set context
   setContext(context: Partial<AgentContext>): void {
     this.context = { ...this.context, ...context };
+  }
+
+  // Set tool executor for direct execution in background context
+  setToolExecutor(executor: ToolExecutor): void {
+    this.toolExecutor = executor;
+  }
+
+  // Execute tool - uses direct executor if available, otherwise sends message
+  protected async executeTool(tool: string, args: Record<string, any>): Promise<any> {
+    if (this.toolExecutor) {
+      // Direct execution in background context
+      return this.toolExecutor(tool, args, this.context.tabId);
+    }
+
+    // Fallback to message passing (for content script context)
+    const response = await chrome.runtime.sendMessage({
+      type: 'EXECUTE_TOOL',
+      payload: {
+        tool,
+        args,
+        tabId: this.context.tabId
+      }
+    });
+
+    if (response?.error) {
+      throw new Error(response.error);
+    }
+
+    return response;
   }
 
   // Initialize conversation

@@ -377,15 +377,8 @@ Interact with content related to: ${persona.interests.join(', ')}`;
       return this.browseFeed(args.duration_seconds, args.interact);
     }
 
-    // Send other tools to content script
-    const response = await chrome.runtime.sendMessage({
-      type: 'EXECUTE_TOOL',
-      payload: {
-        tool: name,
-        args,
-        tabId: this.context.tabId
-      }
-    });
+    // Use executeTool which handles both direct and message-based execution
+    const response = await this.executeTool(name, args);
 
     // Log social activities
     if (['like_post', 'comment_on_post', 'follow_user', 'share_post'].includes(name)) {
@@ -400,11 +393,7 @@ Interact with content related to: ${persona.interests.join(', ')}`;
       });
     }
 
-    if (response.error) {
-      throw new Error(response.error);
-    }
-
-    return response.result || 'Action completed';
+    return response?.result || 'Action completed';
   }
 
   private async goToPlatform(platform: string, page: string): Promise<string> {
@@ -430,14 +419,7 @@ Interact with content related to: ${persona.interests.join(', ')}`;
         break;
     }
 
-    const response = await chrome.runtime.sendMessage({
-      type: 'EXECUTE_TOOL',
-      payload: {
-        tool: 'navigate_to',
-        args: { url },
-        tabId: this.context.tabId
-      }
-    });
+    await this.executeTool('navigate_to', { url });
 
     this.logActivity({
       type: 'social_browse',
@@ -480,14 +462,7 @@ Password: [hidden]`;
     // Simulate browsing
     while (Date.now() < endTime) {
       // Scroll down
-      await chrome.runtime.sendMessage({
-        type: 'EXECUTE_TOOL',
-        payload: {
-          tool: 'scroll_page',
-          args: { direction: 'down', amount: 300 + Math.random() * 200 },
-          tabId: this.context.tabId
-        }
-      });
+      await this.executeTool('scroll_page', { direction: 'down', amount: 300 + Math.random() * 200 });
 
       // Pause to "view" content
       const viewTime = 2000 + Math.random() * 4000;

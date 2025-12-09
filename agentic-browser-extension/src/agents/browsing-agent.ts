@@ -178,19 +178,8 @@ Behave naturally as this persona would - take appropriate pauses, show interest 
   }
 
   protected async executeToolCall(name: string, args: Record<string, any>): Promise<string> {
-    // Send tool execution to content script via background
-    const response = await chrome.runtime.sendMessage({
-      type: 'EXECUTE_TOOL',
-      payload: {
-        tool: name,
-        args,
-        tabId: this.context.tabId
-      }
-    });
-
-    if (response.error) {
-      throw new Error(response.error);
-    }
+    // Use executeTool which handles both direct and message-based execution
+    const response = await this.executeTool(name, args);
 
     // Log activity for certain actions
     if (['navigate_to', 'click_element', 'search_google'].includes(name)) {
@@ -201,7 +190,7 @@ Behave naturally as this persona would - take appropriate pauses, show interest 
       });
     }
 
-    return response.result || 'Action completed';
+    return response?.result || 'Action completed';
   }
 
   // Browse naturally based on persona

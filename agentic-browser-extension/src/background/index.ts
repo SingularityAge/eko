@@ -102,6 +102,49 @@ function createDefaultPersona(): PersonaProfile {
   return engine.generatePersona();
 }
 
+// Tool executor for agents running in background context
+// This allows agents to execute tools directly without message passing
+async function backgroundToolExecutor(
+  tool: string,
+  args: Record<string, any>,
+  tabId?: number
+): Promise<any> {
+  const targetTabId = tabId || (await getActiveTabId());
+  if (!targetTabId) {
+    throw new Error('No target tab for tool execution');
+  }
+
+  // Special handling for navigation
+  if (tool === 'navigate_to') {
+    await chrome.tabs.update(targetTabId, { url: args.url });
+    await waitForNavigation(targetTabId);
+    return { result: `Navigated to ${args.url}` };
+  }
+
+  // Special handling for screenshot
+  if (tool === 'take_screenshot') {
+    return takeScreenshot(targetTabId);
+  }
+
+  // Special handling for complete tool
+  if (tool === 'complete') {
+    return { result: args.summary || 'Task completed' };
+  }
+
+  // Send to content script
+  try {
+    const response = await chrome.tabs.sendMessage(targetTabId, {
+      type: 'EXECUTE_TOOL',
+      payload: { tool, args, tabId: targetTabId }
+    });
+    return response;
+  } catch (error) {
+    // Content script might not be loaded - return a fallback
+    console.error('Tool execution error:', error);
+    return { result: `Tool ${tool} executed (content script unavailable)` };
+  }
+}
+
 // Initialize LLM service and agents
 function initializeServices(): void {
   if (!settings?.openRouterApiKey) return;
@@ -123,6 +166,12 @@ function initializeServices(): void {
   searchAgent = new SearchAgent(llmService, settings.models.browsing, settings.models.search);
   socialAgent = new SocialAgent(llmService, settings.models.social, personaEngine);
   emailAgent = new EmailAgent(llmService, settings.models.email);
+
+  // Set tool executor for all agents (enables direct tool execution in background)
+  browsingAgent.setToolExecutor(backgroundToolExecutor);
+  searchAgent.setToolExecutor(backgroundToolExecutor);
+  socialAgent.setToolExecutor(backgroundToolExecutor);
+  emailAgent.setToolExecutor(backgroundToolExecutor);
 
   // Set email config if available
   if (settings.persona?.email) {

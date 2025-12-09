@@ -320,21 +320,10 @@ When extracting verification codes:
       });
     }
 
-    // Send to content script
-    const response = await chrome.runtime.sendMessage({
-      type: 'EXECUTE_TOOL',
-      payload: {
-        tool: name,
-        args,
-        tabId: this.context.tabId
-      }
-    });
+    // Use executeTool which handles both direct and message-based execution
+    const response = await this.executeTool(name, args);
 
-    if (response.error) {
-      throw new Error(response.error);
-    }
-
-    return response.result || 'Action completed';
+    return response?.result || 'Action completed';
   }
 
   private async goToEmail(page: string): Promise<string> {
@@ -365,14 +354,7 @@ When extracting verification codes:
         break;
     }
 
-    await chrome.runtime.sendMessage({
-      type: 'EXECUTE_TOOL',
-      payload: {
-        tool: 'navigate_to',
-        args: { url },
-        tabId: this.context.tabId
-      }
-    });
+    await this.executeTool('navigate_to', { url });
 
     this.logActivity({
       type: 'email_check',
@@ -420,17 +402,10 @@ The DOM tree shows all interactive elements with their indices.`;
   }
 
   private async extractVerificationCode(): Promise<string> {
-    // Get page content
-    const response = await chrome.runtime.sendMessage({
-      type: 'EXECUTE_TOOL',
-      payload: {
-        tool: 'extract_content',
-        args: {},
-        tabId: this.context.tabId
-      }
-    });
+    // Get page content using executeTool
+    const response = await this.executeTool('extract_content', {});
 
-    const content = response.result || '';
+    const content = response?.result || '';
 
     // Common verification code patterns
     const patterns = [
@@ -481,17 +456,10 @@ The DOM tree shows all interactive elements with their indices.`;
       await this.goToEmail('inbox');
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      // Check for matching email
-      const response = await chrome.runtime.sendMessage({
-        type: 'EXECUTE_TOOL',
-        payload: {
-          tool: 'extract_content',
-          args: {},
-          tabId: this.context.tabId
-        }
-      });
+      // Check for matching email using executeTool
+      const response = await this.executeTool('extract_content', {});
 
-      const content = (response.result || '').toLowerCase();
+      const content = (response?.result || '').toLowerCase();
 
       let found = false;
 
