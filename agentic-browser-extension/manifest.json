@@ -14,7 +14,8 @@
     "cookies",
     "history",
     "bookmarks",
-    "identity"
+    "identity",
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>"

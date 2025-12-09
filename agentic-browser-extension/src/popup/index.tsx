@@ -37,16 +37,40 @@ function App() {
     setLoading(false);
   };
 
-  const startAgent = async (agentType: string) => {
-    await chrome.runtime.sendMessage({
-      type: 'START_AGENT',
-      payload: { agentType }
-    });
-    loadState();
+  const startAgent = async (agentType: string, task?: string) => {
+    // Default tasks for each agent type
+    const defaultTasks: Record<string, string> = {
+      browsing: 'Browse the web naturally based on my interests',
+      search: 'Search for interesting topics related to my interests',
+      social: 'Browse my social media feeds naturally',
+      email: 'Check my email inbox for new messages'
+    };
+
+    const agentTask = task || defaultTasks[agentType] || 'Browse naturally';
+
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'START_AGENT',
+        payload: { agentType, task: agentTask }
+      });
+      loadState();
+    } catch (error) {
+      console.error('Failed to start agent:', error);
+    }
   };
 
-  const openSidebar = () => {
-    chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT });
+  const openSidebar = async () => {
+    try {
+      // Get current window
+      const currentWindow = await chrome.windows.getCurrent();
+      if (currentWindow.id) {
+        await chrome.sidePanel.open({ windowId: currentWindow.id });
+      }
+    } catch (error) {
+      console.error('Failed to open side panel:', error);
+      // Fallback: open sidebar.html in a new tab
+      chrome.tabs.create({ url: chrome.runtime.getURL('sidebar.html') });
+    }
   };
 
   const openOptions = () => {

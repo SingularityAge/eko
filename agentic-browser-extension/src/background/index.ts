@@ -616,7 +616,17 @@ chrome.alarms.create('activity_save', { periodInMinutes: 5 });
 initialize();
 
 // Handle extension install/update
-chrome.runtime.onInstalled.addListener((details) => {
+chrome.runtime.onInstalled.addListener(async (details) => {
+  // Enable side panel for all pages
+  try {
+    await chrome.sidePanel.setOptions({
+      enabled: true
+    });
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+  } catch (error) {
+    console.error('Failed to setup side panel:', error);
+  }
+
   if (details.reason === 'install') {
     // Open options page on first install
     chrome.runtime.openOptionsPage();
