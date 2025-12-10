@@ -147,12 +147,20 @@ export abstract class BaseAgent {
       message += `Current URL: ${this.context.url}\n`;
     }
 
-    if (this.context.pageContent) {
-      message += `\nPage Content:\n${this.context.pageContent.slice(0, 10000)}\n`;
+    // Ensure pageContent is a string before slicing
+    const pageContent = typeof this.context.pageContent === 'string'
+      ? this.context.pageContent
+      : JSON.stringify(this.context.pageContent || '');
+    if (pageContent) {
+      message += `\nPage Content:\n${pageContent.slice(0, 10000)}\n`;
     }
 
-    if (this.context.domTree) {
-      message += `\nInteractive Elements:\n${this.context.domTree.slice(0, 15000)}\n`;
+    // Ensure domTree is a string before slicing
+    const domTree = typeof this.context.domTree === 'string'
+      ? this.context.domTree
+      : JSON.stringify(this.context.domTree || '');
+    if (domTree) {
+      message += `\nInteractive Elements:\n${domTree.slice(0, 15000)}\n`;
     }
 
     if (this.context.previousActions.length > 0) {
