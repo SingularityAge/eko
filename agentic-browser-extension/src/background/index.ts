@@ -443,18 +443,38 @@ async function startAgent(
     domTree: pageState.domTree
   });
 
-  // Run agent
+  // Run agent with error handling
   if (task) {
-    return agent.run(task, (update: any) => {
-      // Broadcast updates to sidebar
+    console.log(`Starting ${agentType} agent with task: ${task}`);
+    console.log(`Page context: URL=${pageState.url}, content length=${pageState.content?.length || 0}, DOM elements=${pageState.domTree?.length || 0}`);
+
+    try {
+      const result = await agent.run(task, (update: any) => {
+        console.log(`Agent ${agentType} update:`, update.type, update.data?.content?.slice(0, 100) || '');
+        // Broadcast updates to sidebar
+        broadcastUpdate({
+          type: 'AGENT_UPDATE',
+          payload: {
+            agentType,
+            ...update
+          }
+        });
+      });
+
+      console.log(`Agent ${agentType} completed:`, result?.slice(0, 200) || 'no result');
+      return result;
+    } catch (error) {
+      console.error(`Agent ${agentType} failed:`, error);
       broadcastUpdate({
         type: 'AGENT_UPDATE',
         payload: {
           agentType,
-          ...update
+          type: 'error',
+          data: { error: error instanceof Error ? error.message : String(error) }
         }
       });
-    });
+      throw error;
+    }
   }
 
   return { status: 'Agent started', state: agent.getState() };
@@ -755,12 +775,13 @@ initialize();
 
 // Handle extension install/update
 chrome.runtime.onInstalled.addListener(async (details) => {
-  // Enable side panel for all pages
+  // Enable side panel for all pages and open on action click
   try {
     await chrome.sidePanel.setOptions({
       enabled: true
     });
-    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+    // Open sidebar directly when clicking extension icon (no popup)
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
   } catch (error) {
     console.error('Failed to setup side panel:', error);
   }
@@ -770,5 +791,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     chrome.runtime.openOptionsPage();
   }
 });
+
+// Also set panel behavior on startup (in case extension was already installed)
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
 console.log('Background service worker loaded');
