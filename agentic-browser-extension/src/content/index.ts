@@ -78,6 +78,9 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
 
 async function handleMessage(message: ExtensionMessage): Promise<any> {
   switch (message.type) {
+    case 'PING':
+      return { status: 'ok', loaded: true };
+
     case 'GET_PAGE_STATE':
       return getPageState();
 

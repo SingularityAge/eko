@@ -283,7 +283,8 @@ export type MessageType =
   | 'FILL_FORM'
   | 'HOVER_ELEMENT'
   | 'WAIT_FOR_ELEMENT'
-  | 'ERROR';
+  | 'ERROR'
+  | 'PING';
 
 // Storage Keys
 export const STORAGE_KEYS = {

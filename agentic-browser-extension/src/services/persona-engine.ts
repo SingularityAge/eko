@@ -137,8 +137,145 @@ export class PersonaEngine {
   private currentEnergy: number = 1.0;
   private lastActivityTime: number = Date.now();
 
+  // Sleep and break tracking
+  private sleepStartTime: number = 0;
+  private sleepDurationMs: number = 0;
+  private dailyBreaks: Array<{ start: number; duration: number }> = [];
+  private lastBreakScheduleDay: number = -1;
+
   constructor(seed?: number) {
     this.random = new SeededRandom(seed || Date.now());
+    this.scheduleDailyBreaks();
+  }
+
+  // Schedule random daily breaks (30-90 minutes total, split into 1-3 breaks)
+  private scheduleDailyBreaks(): void {
+    const today = new Date().getDate();
+    if (this.lastBreakScheduleDay === today) return;
+
+    this.lastBreakScheduleDay = today;
+    this.dailyBreaks = [];
+
+    // Total break time: 30-90 minutes
+    const totalBreakMinutes = this.random.nextInt(30, 90);
+    const numBreaks = this.random.nextInt(1, 3);
+    const breakDuration = Math.floor(totalBreakMinutes / numBreaks);
+
+    // Schedule breaks during waking hours (avoid peak times)
+    const now = new Date();
+    const baseHour = now.getHours();
+
+    for (let i = 0; i < numBreaks; i++) {
+      // Schedule breaks at random times during the day
+      const breakHour = this.random.nextInt(10, 20); // Between 10 AM and 8 PM
+      const breakMinute = this.random.nextInt(0, 59);
+
+      const breakStart = new Date();
+      breakStart.setHours(breakHour, breakMinute, 0, 0);
+
+      // Only schedule if it's in the future today
+      if (breakStart.getTime() > Date.now()) {
+        this.dailyBreaks.push({
+          start: breakStart.getTime(),
+          duration: breakDuration * 60 * 1000 // Convert to ms
+        });
+      }
+    }
+
+    console.log(`Scheduled ${this.dailyBreaks.length} breaks for today, total ${totalBreakMinutes} minutes`);
+  }
+
+  // Check if currently on a scheduled break
+  isOnBreak(): boolean {
+    const now = Date.now();
+
+    for (const brk of this.dailyBreaks) {
+      if (now >= brk.start && now < brk.start + brk.duration) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Get remaining break time in ms
+  getBreakTimeRemaining(): number {
+    const now = Date.now();
+
+    for (const brk of this.dailyBreaks) {
+      if (now >= brk.start && now < brk.start + brk.duration) {
+        return brk.start + brk.duration - now;
+      }
+    }
+
+    return 0;
+  }
+
+  // Start sleep period (6-9 hours random)
+  startSleep(): void {
+    const sleepHours = this.random.nextInt(6, 9);
+    this.sleepDurationMs = sleepHours * 60 * 60 * 1000;
+    this.sleepStartTime = Date.now();
+    console.log(`Persona going to sleep for ${sleepHours} hours`);
+  }
+
+  // Check if currently sleeping (called when checking isAwake)
+  isSleeping(): boolean {
+    if (this.sleepStartTime === 0) return false;
+
+    const elapsed = Date.now() - this.sleepStartTime;
+    if (elapsed >= this.sleepDurationMs) {
+      // Wake up
+      this.sleepStartTime = 0;
+      this.sleepDurationMs = 0;
+      this.scheduleDailyBreaks(); // Schedule new breaks for new day
+      console.log('Persona woke up from sleep');
+      return false;
+    }
+
+    return true;
+  }
+
+  // Get sleep time remaining in ms
+  getSleepTimeRemaining(): number {
+    if (this.sleepStartTime === 0) return 0;
+    const elapsed = Date.now() - this.sleepStartTime;
+    return Math.max(0, this.sleepDurationMs - elapsed);
+  }
+
+  // Check if persona can be active (not sleeping, not on break)
+  canBeActive(): boolean {
+    // Reschedule breaks if it's a new day
+    this.scheduleDailyBreaks();
+
+    return this.isAwake() && !this.isSleeping() && !this.isOnBreak();
+  }
+
+  // Get next available activity time
+  getNextAvailableTime(): number {
+    const now = Date.now();
+
+    // If sleeping, return wake time
+    if (this.isSleeping()) {
+      return this.sleepStartTime + this.sleepDurationMs;
+    }
+
+    // If on break, return break end
+    const breakRemaining = this.getBreakTimeRemaining();
+    if (breakRemaining > 0) {
+      return now + breakRemaining;
+    }
+
+    // If it's sleep time based on schedule, return next wake time
+    if (!this.isAwake() && this.persona) {
+      const [wakeHour, wakeMin] = this.persona.schedule.wakeTime.split(':').map(Number);
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(wakeHour, wakeMin, 0, 0);
+      return tomorrow.getTime();
+    }
+
+    return now; // Can be active now
   }
 
   // Generate a complete persona

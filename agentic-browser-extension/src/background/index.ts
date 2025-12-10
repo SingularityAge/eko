@@ -34,6 +34,19 @@ let emailAgent: EmailAgent | null = null;
 const activities: Activity[] = [];
 const MAX_ACTIVITIES = 1000;
 
+// Manual override - when user manually starts an agent, bypass schedule for 5 minutes
+let manualOverrideUntil: number = 0;
+const MANUAL_OVERRIDE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+function setManualOverride(): void {
+  manualOverrideUntil = Date.now() + MANUAL_OVERRIDE_DURATION;
+  console.log('Manual override activated for 5 minutes');
+}
+
+function isManualOverrideActive(): boolean {
+  return Date.now() < manualOverrideUntil;
+}
+
 // Initialization
 async function initialize(): Promise<void> {
   console.log('Initializing Agentic Browser Extension...');
@@ -116,9 +129,14 @@ async function backgroundToolExecutor(
 
   // Special handling for navigation
   if (tool === 'navigate_to') {
-    await chrome.tabs.update(targetTabId, { url: args.url });
+    const url = normalizeUrl(args.url);
+    await chrome.tabs.update(targetTabId, { url });
     await waitForNavigation(targetTabId);
-    return { result: `Navigated to ${args.url}` };
+    // Give page time to load and content script to initialize
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Ensure content script is injected
+    await ensureContentScript(targetTabId);
+    return { result: `Navigated to ${url}` };
   }
 
   // Special handling for screenshot
@@ -131,6 +149,15 @@ async function backgroundToolExecutor(
     return { result: args.summary || 'Task completed' };
   }
 
+  // Special handling for wait
+  if (tool === 'wait') {
+    await new Promise(resolve => setTimeout(resolve, (args.seconds || 1) * 1000));
+    return { result: `Waited ${args.seconds || 1} seconds` };
+  }
+
+  // Ensure content script is loaded before sending tool
+  await ensureContentScript(targetTabId);
+
   // Send to content script
   try {
     const response = await chrome.tabs.sendMessage(targetTabId, {
@@ -139,9 +166,45 @@ async function backgroundToolExecutor(
     });
     return response;
   } catch (error) {
-    // Content script might not be loaded - return a fallback
-    console.error('Tool execution error:', error);
-    return { result: `Tool ${tool} executed (content script unavailable)` };
+    // Content script might not be loaded - try injecting and retry
+    console.error('Tool execution error, retrying after injection:', error);
+    await ensureContentScript(targetTabId, true);
+    try {
+      const response = await chrome.tabs.sendMessage(targetTabId, {
+        type: 'EXECUTE_TOOL',
+        payload: { tool, args, tabId: targetTabId }
+      });
+      return response;
+    } catch (retryError) {
+      return { result: `Tool ${tool} failed: content script unavailable`, error: String(retryError) };
+    }
+  }
+}
+
+// Ensure content script is injected in the tab
+async function ensureContentScript(tabId: number, forceInject: boolean = false): Promise<void> {
+  try {
+    // Check if content script is already loaded by trying to ping it
+    if (!forceInject) {
+      try {
+        await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+        return; // Content script is loaded
+      } catch {
+        // Content script not loaded, inject it
+      }
+    }
+
+    // Inject the content script
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content.js']
+    });
+
+    // Wait for script to initialize
+    await new Promise(resolve => setTimeout(resolve, 500));
+  } catch (error) {
+    // Might fail on chrome:// pages or other restricted pages
+    console.warn('Could not inject content script:', error);
   }
 }
 
@@ -316,10 +379,36 @@ async function startAgent(
     throw new Error('Services not initialized. Please set your OpenRouter API key.');
   }
 
+  // Activate manual override when user explicitly starts an agent
+  // This allows at least 5 minutes of activity before schedule restrictions kick in
+  setManualOverride();
+
+  // Check if persona can be active (not sleeping or on break)
+  // Skip this check if manual override is active
+  if (personaEngine && !isManualOverrideActive()) {
+    if (!personaEngine.canBeActive()) {
+      const nextAvailable = personaEngine.getNextAvailableTime();
+      const waitMinutes = Math.ceil((nextAvailable - Date.now()) / 60000);
+
+      if (personaEngine.isSleeping()) {
+        throw new Error(`Persona is sleeping. Will be available in ${waitMinutes} minutes.`);
+      }
+      if (personaEngine.isOnBreak()) {
+        throw new Error(`Persona is on a break. Will be available in ${waitMinutes} minutes.`);
+      }
+      if (!personaEngine.isAwake()) {
+        throw new Error(`Persona is outside active hours. Will be available at wake time.`);
+      }
+    }
+  }
+
   const activeTabId = tabId || (await getActiveTabId());
   if (!activeTabId) {
     throw new Error('No active tab found');
   }
+
+  // Ensure content script is loaded before getting page state
+  await ensureContentScript(activeTabId);
 
   // Get page state
   const pageState = await getPageState(activeTabId);
