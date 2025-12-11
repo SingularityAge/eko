@@ -661,9 +661,12 @@ Look for an input field for the verification code and:
   ): Promise<void> {
     let urlIndex = 0;
     let interactionsOnCurrentPage = 0;
+    let consecutiveErrors = 0;
+    const maxConsecutiveErrors = 3;
     const minInteractionsPerPage = 5;
     const maxInteractionsPerPage = 12;
     let targetInteractions = minInteractionsPerPage + Math.floor(Math.random() * (maxInteractionsPerPage - minInteractionsPerPage));
+    let currentPageUrl = '';
 
     while (this.autonomousState.status === 'running') {
       if (this.state.status === 'paused') {
@@ -687,13 +690,21 @@ Look for an input field for the verification code and:
       // Periodic tab cleanup
       await this.cleanupTabs();
 
-      // Only navigate to a new URL after sufficient interactions on current page
-      if (interactionsOnCurrentPage >= targetInteractions || interactionsOnCurrentPage === 0) {
+      // Navigate to a new URL if needed:
+      // - First time (no current page)
+      // - Done enough interactions on current page
+      // - Too many consecutive errors on current page
+      const shouldNavigate =
+        !currentPageUrl ||
+        interactionsOnCurrentPage >= targetInteractions ||
+        consecutiveErrors >= maxConsecutiveErrors;
+
+      if (shouldNavigate) {
         const url = urls[urlIndex % urls.length];
         urlIndex++;
 
-        // Skip recently visited
-        if (this.autonomousState.visitedUrls.has(url) && urlIndex < urls.length * 2) {
+        // Skip recently visited (but not if we have errors)
+        if (this.autonomousState.visitedUrls.has(url) && urlIndex < urls.length * 2 && consecutiveErrors === 0) {
           continue;
         }
 
@@ -701,6 +712,7 @@ Look for an input field for the verification code and:
           // Navigate to new URL
           await this.executeTool('navigate_to', { url });
           this.autonomousState.visitedUrls.add(url);
+          currentPageUrl = url;
 
           // Track this tab
           try {
@@ -710,36 +722,57 @@ Look for an input field for the verification code and:
             }
           } catch (e) {}
 
-          await this.sleep(3000); // Wait for page load
+          // Wait longer for page load
+          await this.sleep(4000);
 
           onUpdate?.({
             type: 'navigation',
             data: { url }
           });
 
-          // Reset interaction counter for new page
+          // Reset counters for new page
           interactionsOnCurrentPage = 0;
+          consecutiveErrors = 0;
           targetInteractions = minInteractionsPerPage + Math.floor(Math.random() * (maxInteractionsPerPage - minInteractionsPerPage));
 
         } catch (error) {
           console.error(`Error navigating to ${url}:`, error);
+          onUpdate?.({
+            type: 'error',
+            data: { error: `Navigation failed: ${error instanceof Error ? error.message : String(error)}` }
+          });
           await this.sleep(2000);
+          // Try next URL
           continue;
         }
       }
 
       try {
-        // Get current page state
-        const pageInfo = await this.executeTool('get_page_info', {});
-        const content = await this.executeTool('extract_content', {});
-        const currentUrl = pageInfo?.url || '';
+        // Get current page state with error handling
+        let pageInfo: any = {};
+        let contentStr = '';
+
+        try {
+          pageInfo = await this.executeTool('get_page_info', {}) || {};
+        } catch (e) {
+          console.warn('Failed to get page info:', e);
+        }
+
+        try {
+          const content = await this.executeTool('extract_content', {});
+          contentStr = content?.result || content || '';
+        } catch (e) {
+          console.warn('Failed to extract content:', e);
+        }
+
+        // Use whatever URL we have
+        const currentUrl = pageInfo?.url || currentPageUrl || '';
 
         // Check for email verification prompts
-        const contentStr = content?.result || content || '';
-        if (this.checkForEmailVerification(contentStr)) {
+        if (contentStr && this.checkForEmailVerification(contentStr)) {
           try {
             const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (activeTab?.id) {
+            if (activeTab?.id && !this.autonomousState.emailVerificationPending) {
               this.scheduleEmailVerification(activeTab.id, currentUrl);
               onUpdate?.({
                 type: 'email_verification_detected',
@@ -765,6 +798,8 @@ Look for an input field for the verification code and:
           });
         });
 
+        // Success! Reset error counter and increment interactions
+        consecutiveErrors = 0;
         interactionsOnCurrentPage++;
 
         // Natural pause between interactions
@@ -779,26 +814,54 @@ Look for an input field for the verification code and:
         }
 
       } catch (error) {
-        console.error('Error during interaction:', error);
+        consecutiveErrors++;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`Error during interaction (${consecutiveErrors}/${maxConsecutiveErrors}):`, errorMsg);
+
         onUpdate?.({
           type: 'error',
-          data: { error: error instanceof Error ? error.message : String(error) }
+          data: { error: errorMsg, consecutiveErrors, willRetry: consecutiveErrors < maxConsecutiveErrors }
         });
-        await this.sleep(2000);
-        interactionsOnCurrentPage++; // Count failed attempt to avoid infinite loop
+
+        // Wait before retry, longer wait for more errors
+        await this.sleep(2000 * consecutiveErrors);
+
+        // Don't count as interaction - we'll retry or move to next page
       }
     }
   }
 
   private generateInteractionTask(url: string, currentInteractions: number, targetInteractions: number): string {
     const persona = this.personaEngine?.getPersona();
-    const domain = new URL(url).hostname;
+    let domain = 'this website';
+    try {
+      if (url && url.startsWith('http')) {
+        domain = new URL(url).hostname;
+      }
+    } catch {
+      // Invalid URL, use fallback
+    }
     const remaining = targetInteractions - currentInteractions;
 
     let task = `You are browsing ${domain}. `;
 
+    // ALWAYS check for popups first
+    task += `
+
+FIRST: Check if there are any popups, modals, cookie banners, or overlay dialogs blocking the page. Common ones include:
+- Cookie consent ("Accept cookies", "I agree", "Accept all")
+- Newsletter signup popups ("No thanks", "X" close button, "Maybe later")
+- Login prompts ("Continue as guest", "X" close button)
+- Age verification ("I am over 18", "Enter")
+- Notification permission requests (click "Block" or "X")
+- Any modal with "Close", "X", "Dismiss", "Skip", or "No thanks"
+
+If you see ANY popup or overlay, CLICK TO DISMISS IT FIRST before doing anything else.
+
+`;
+
     if (currentInteractions === 0) {
-      task += `This is a fresh page. Take a moment to look around. `;
+      task += `This is a fresh page. Dismiss any popups, then take a moment to look around. `;
     } else {
       task += `You've done ${currentInteractions} things on this page. Do ${remaining} more before moving on. `;
     }
@@ -816,6 +879,8 @@ Look for an input field for the verification code and:
         task += `Click on a product that looks interesting. Check the reviews. Add something to cart for fun.`;
       } else if (domain.includes('news') || domain.includes('cnn') || domain.includes('bbc')) {
         task += `Click on a headline that catches your eye. Read the article a bit before moving on.`;
+      } else if (domain.includes('tripadvisor') || domain.includes('yelp')) {
+        task += `Browse restaurants or attractions. Click on one with good reviews. Read some reviews.`;
       } else {
         task += `Explore naturally based on your interests (${interests}). Click on something interesting, scroll around, interact with the page.`;
       }
@@ -825,10 +890,13 @@ Look for an input field for the verification code and:
 
     task += `
 
-DO NOT use navigate_to unless you want to go to a completely different website.
-Use click_element to interact with links and buttons ON THIS PAGE.
-Use scroll_page to see more content.
-Use read_content or wait to spend time "reading".
+IMPORTANT RULES:
+- DO NOT use navigate_to - stay on this page
+- Use click_element to interact with links and buttons
+- Use scroll_page to see more content
+- Use wait to spend time "reading" (5-15 seconds)
+- If a click doesn't work, try scrolling or clicking something else
+- Don't give up easily - try multiple things
 
 After your action, use complete to summarize what you did.`;
 
