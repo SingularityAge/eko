@@ -49,7 +49,7 @@ export interface Tool {
 }
 
 // Agent Types
-export type AgentType = 'browsing' | 'search' | 'social' | 'email' | 'persona';
+export type AgentType = 'browsing' | 'search' | 'social' | 'email' | 'persona' | 'autonomous';
 
 export interface AgentState {
   id: string;
@@ -284,7 +284,12 @@ export type MessageType =
   | 'HOVER_ELEMENT'
   | 'WAIT_FOR_ELEMENT'
   | 'ERROR'
-  | 'PING';
+  | 'PING'
+  | 'AUTONOMOUS_START'
+  | 'AUTONOMOUS_PAUSE'
+  | 'AUTONOMOUS_RESUME'
+  | 'AUTONOMOUS_RESET'
+  | 'AUTONOMOUS_STATUS';
 
 // Storage Keys
 export const STORAGE_KEYS = {

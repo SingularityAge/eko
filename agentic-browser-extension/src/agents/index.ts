@@ -7,5 +7,6 @@ export { BrowsingAgent } from './browsing-agent';
 export { SearchAgent } from './search-agent';
 export { SocialAgent } from './social-agent';
 export { EmailAgent } from './email-agent';
+export { AutonomousAgent } from './autonomous-agent';
 
 export type { AgentContext, AgentConfig } from './base-agent';

@@ -9,6 +9,7 @@ import { BrowsingAgent } from '../agents/browsing-agent';
 import { SearchAgent } from '../agents/search-agent';
 import { SocialAgent } from '../agents/social-agent';
 import { EmailAgent } from '../agents/email-agent';
+import { AutonomousAgent } from '../agents/autonomous-agent';
 import {
   ExtensionMessage,
   ExtensionSettings,
@@ -29,6 +30,11 @@ let browsingAgent: BrowsingAgent | null = null;
 let searchAgent: SearchAgent | null = null;
 let socialAgent: SocialAgent | null = null;
 let emailAgent: EmailAgent | null = null;
+let autonomousAgent: AutonomousAgent | null = null;
+
+// Autonomous mode state
+let autonomousStatus: 'idle' | 'running' | 'paused' = 'idle';
+let currentAutonomousAction: string = '';
 
 // Activity log
 const activities: Activity[] = [];
@@ -229,12 +235,14 @@ function initializeServices(): void {
   searchAgent = new SearchAgent(llmService, settings.models.browsing, settings.models.search);
   socialAgent = new SocialAgent(llmService, settings.models.social, personaEngine);
   emailAgent = new EmailAgent(llmService, settings.models.email);
+  autonomousAgent = new AutonomousAgent(llmService, settings.models.browsing, personaEngine);
 
   // Set tool executor for all agents (enables direct tool execution in background)
   browsingAgent.setToolExecutor(backgroundToolExecutor);
   searchAgent.setToolExecutor(backgroundToolExecutor);
   socialAgent.setToolExecutor(backgroundToolExecutor);
   emailAgent.setToolExecutor(backgroundToolExecutor);
+  autonomousAgent.setToolExecutor(backgroundToolExecutor);
 
   // Set email config if available
   if (settings.persona?.email) {
@@ -308,6 +316,18 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
       // Handle navigation from content script with proper URL normalization
       return doNavigate(message.payload.url, tabId);
 
+    case 'AUTONOMOUS_START':
+      return startAutonomous(tabId);
+
+    case 'AUTONOMOUS_PAUSE':
+      return pauseAutonomous();
+
+    case 'AUTONOMOUS_RESUME':
+      return resumeAutonomous();
+
+    case 'AUTONOMOUS_RESET':
+      return resetAutonomous();
+
     default:
       throw new Error(`Unknown message type: ${message.type}`);
   }
@@ -321,10 +341,13 @@ function getState(): any {
       browsing: browsingAgent?.getState() || null,
       search: searchAgent?.getState() || null,
       social: socialAgent?.getState() || null,
-      email: emailAgent?.getState() || null
+      email: emailAgent?.getState() || null,
+      autonomous: autonomousAgent?.getState() || null
     },
     persona: personaEngine?.getPersona() || null,
-    isInitialized: !!llmService
+    isInitialized: !!llmService,
+    autonomousStatus,
+    currentAction: currentAutonomousAction
   };
 }
 
@@ -515,9 +538,155 @@ function getAgent(agentType: string): any {
       return socialAgent;
     case 'email':
       return emailAgent;
+    case 'autonomous':
+      return autonomousAgent;
     default:
       return null;
   }
+}
+
+// ============================================
+// Autonomous Mode Control
+// ============================================
+
+// Start autonomous browsing
+async function startAutonomous(tabId?: number): Promise<any> {
+  if (!llmService) {
+    throw new Error('Services not initialized. Please set your OpenRouter API key.');
+  }
+
+  if (!autonomousAgent) {
+    throw new Error('Autonomous agent not initialized');
+  }
+
+  if (autonomousStatus === 'running') {
+    return { status: 'already_running' };
+  }
+
+  // Activate manual override
+  setManualOverride();
+
+  const activeTabId = tabId || (await getActiveTabId());
+  if (!activeTabId) {
+    throw new Error('No active tab found');
+  }
+
+  // Ensure content script is loaded
+  await ensureContentScript(activeTabId);
+
+  // Set context
+  autonomousAgent.setContext({ tabId: activeTabId });
+
+  autonomousStatus = 'running';
+  currentAutonomousAction = 'Discovering URLs based on persona...';
+
+  // Broadcast status update
+  broadcastUpdate({
+    type: 'AUTONOMOUS_STATUS',
+    payload: { status: 'running', action: currentAutonomousAction }
+  });
+
+  // Start autonomous browsing in background
+  autonomousAgent.startAutonomous((update) => {
+    // Handle updates from autonomous agent
+    if (update.type === 'phase') {
+      currentAutonomousAction = getPhaseDescription(update.data.phase);
+    } else if (update.type === 'navigation') {
+      currentAutonomousAction = `Browsing: ${update.data.url}`;
+    } else if (update.type === 'error') {
+      currentAutonomousAction = `Error: ${update.data.error}`;
+    } else if (update.type === 'break') {
+      currentAutonomousAction = `Taking a break (${Math.round(update.data.duration)}s)...`;
+    } else if (update.type === 'email_verification_detected') {
+      currentAutonomousAction = `Email verification detected - will check in ${update.data.scheduledIn}`;
+    }
+
+    // Broadcast all updates to sidebar
+    broadcastUpdate({
+      type: 'AGENT_UPDATE',
+      payload: {
+        agentType: 'autonomous',
+        ...update
+      }
+    });
+
+    broadcastUpdate({
+      type: 'AUTONOMOUS_STATUS',
+      payload: { status: autonomousStatus, action: currentAutonomousAction }
+    });
+  }).catch((error) => {
+    console.error('Autonomous agent error:', error);
+    autonomousStatus = 'idle';
+    currentAutonomousAction = '';
+    broadcastUpdate({
+      type: 'AUTONOMOUS_STATUS',
+      payload: { status: 'idle', action: '', error: error.message }
+    });
+  });
+
+  return { status: 'started' };
+}
+
+function getPhaseDescription(phase: string): string {
+  const descriptions: Record<string, string> = {
+    discovering: 'Discovering URLs based on persona interests...',
+    browsing: 'Browsing websites naturally...',
+    social: 'Checking social media...',
+    email: 'Checking email...',
+    reading: 'Reading content...',
+    waiting: 'Waiting...'
+  };
+  return descriptions[phase] || `Phase: ${phase}`;
+}
+
+// Pause autonomous browsing
+function pauseAutonomous(): any {
+  if (autonomousAgent && autonomousStatus === 'running') {
+    autonomousAgent.pause();
+    autonomousStatus = 'paused';
+    currentAutonomousAction = 'Paused';
+
+    broadcastUpdate({
+      type: 'AUTONOMOUS_STATUS',
+      payload: { status: 'paused', action: currentAutonomousAction }
+    });
+
+    return { status: 'paused' };
+  }
+  return { status: 'not_running' };
+}
+
+// Resume autonomous browsing
+function resumeAutonomous(): any {
+  if (autonomousAgent && autonomousStatus === 'paused') {
+    autonomousAgent.resume();
+    autonomousStatus = 'running';
+    currentAutonomousAction = 'Resuming browsing...';
+
+    broadcastUpdate({
+      type: 'AUTONOMOUS_STATUS',
+      payload: { status: 'running', action: currentAutonomousAction }
+    });
+
+    return { status: 'resumed' };
+  }
+  return { status: 'not_paused' };
+}
+
+// Reset autonomous browsing
+function resetAutonomous(): any {
+  if (autonomousAgent) {
+    autonomousAgent.reset();
+  }
+  autonomousStatus = 'idle';
+  currentAutonomousAction = '';
+
+  broadcastUpdate({
+    type: 'AUTONOMOUS_STATUS',
+    payload: { status: 'idle', action: '' }
+  });
+
+  return { status: 'reset' };
 }
 
 // Execute a task (auto-select agent)
