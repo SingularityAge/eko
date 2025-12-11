@@ -8,20 +8,59 @@ import { LLMMessage, Tool, ToolCall } from '../shared/types';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 // Model family detection
-type ModelFamily = 'claude' | 'openai' | 'gemini' | 'llama' | 'mistral' | 'perplexity' | 'grok' | 'deepseek' | 'qwen' | 'cohere' | 'other';
+type ModelFamily = 'claude' | 'openai' | 'gemini' | 'llama' | 'mistral' | 'perplexity' | 'grok' | 'deepseek' | 'qwen' | 'cohere' | 'kimi' | 'nova' | 'minimax' | 'nemotron' | 'glm' | 'bytedance' | 'other';
 
 function detectModelFamily(model: string): ModelFamily {
   const modelLower = model.toLowerCase();
+
+  // Anthropic Claude
   if (modelLower.includes('claude') || modelLower.includes('anthropic')) return 'claude';
+
+  // OpenAI GPT / o1 / o3
   if (modelLower.includes('gpt') || modelLower.includes('openai') || modelLower.includes('o1-') || modelLower.includes('o3-')) return 'openai';
+
+  // Google Gemini
   if (modelLower.includes('gemini') || modelLower.includes('google')) return 'gemini';
-  if (modelLower.includes('grok') || modelLower.includes('xai')) return 'grok';
-  if (modelLower.includes('llama') || modelLower.includes('meta-llama')) return 'llama';
+
+  // xAI Grok
+  if (modelLower.includes('grok') || modelLower.includes('xai/') || modelLower.includes('x-ai')) return 'grok';
+
+  // Meta Llama
+  if (modelLower.includes('llama') || modelLower.includes('meta-llama') || modelLower.includes('meta/')) return 'llama';
+
+  // Mistral / Mixtral
   if (modelLower.includes('mistral') || modelLower.includes('mixtral')) return 'mistral';
+
+  // Perplexity Sonar (search models)
   if (modelLower.includes('perplexity') || modelLower.includes('sonar')) return 'perplexity';
+
+  // DeepSeek
   if (modelLower.includes('deepseek')) return 'deepseek';
+
+  // Alibaba Qwen
   if (modelLower.includes('qwen')) return 'qwen';
-  if (modelLower.includes('cohere') || modelLower.includes('command')) return 'cohere';
+
+  // Cohere Command
+  if (modelLower.includes('cohere') || modelLower.includes('command-r')) return 'cohere';
+
+  // Moonshot AI Kimi K2
+  if (modelLower.includes('kimi') || modelLower.includes('moonshot')) return 'kimi';
+
+  // Amazon Nova
+  if (modelLower.includes('nova') || modelLower.includes('amazon')) return 'nova';
+
+  // Minimax
+  if (modelLower.includes('minimax')) return 'minimax';
+
+  // Nvidia Nemotron
+  if (modelLower.includes('nemotron') || modelLower.includes('nvidia')) return 'nemotron';
+
+  // Zhipu AI GLM (z.ai)
+  if (modelLower.includes('glm') || modelLower.includes('zhipu') || modelLower.includes('chatglm')) return 'glm';
+
+  // ByteDance UI-TARS
+  if (modelLower.includes('bytedance') || modelLower.includes('ui-tars') || modelLower.includes('doubao')) return 'bytedance';
+
   return 'other';
 }
 
@@ -110,7 +149,6 @@ export class OpenRouterService {
         // Gemini requires reasoning to be included for tool calls
         if (hasTools) {
           config.include_reasoning = true;
-          // Gemini also needs this provider setting
           config.provider = {
             order: ['Google AI Studio', 'Google'],
             require_parameters: true
@@ -127,21 +165,44 @@ export class OpenRouterService {
         break;
 
       case 'grok':
-        // xAI Grok works well with OpenAI-compatible API
-        // Grok supports tool calls natively
+        // xAI Grok - OpenAI-compatible, supports tool calls
         break;
 
       case 'deepseek':
-        // DeepSeek works well with default settings
-        // Supports tool calls
+        // DeepSeek - supports tool calls
         break;
 
       case 'qwen':
-        // Alibaba Qwen models work with default settings
+        // Alibaba Qwen - supports tool calls
         break;
 
       case 'cohere':
-        // Cohere Command models work with default settings
+        // Cohere Command - supports tool calls
+        break;
+
+      case 'kimi':
+        // Moonshot Kimi K2 - supports tool calls, OpenAI-compatible
+        break;
+
+      case 'nova':
+        // Amazon Nova - supports tool calls
+        break;
+
+      case 'minimax':
+        // Minimax - supports tool calls
+        break;
+
+      case 'nemotron':
+        // Nvidia Nemotron - supports tool calls
+        break;
+
+      case 'glm':
+        // Zhipu GLM - supports tool calls
+        break;
+
+      case 'bytedance':
+        // ByteDance UI-TARS/Doubao - supports tool calls
+        // May need specific handling for UI-TARS vision/action models
         break;
 
       case 'llama':
@@ -153,7 +214,11 @@ export class OpenRouterService {
         break;
 
       case 'perplexity':
-        // Perplexity is for search - no special config needed
+        // Perplexity is for search - no tool calls
+        break;
+
+      case 'other':
+        // Unknown models - try with default settings
         break;
     }
 
