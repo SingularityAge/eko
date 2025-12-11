@@ -217,6 +217,7 @@ export type ActivityType =
   | 'email_check'
   | 'email_read'
   | 'email_compose'
+  | 'email_verify'
   | 'social_browse'
   | 'social_post'
   | 'social_react'

@@ -24,18 +24,41 @@ const EMAIL_VERIFICATION_PATTERNS = [
   /confirmation.*sent/i,
   /verify.*account/i,
   /activation.*email/i,
-  /click.*link.*email/i
+  /click.*link.*email/i,
+  /enter.*code.*sent/i,
+  /verification code/i,
+  /confirm.*email/i
 ];
+
+// Patterns to extract verification codes from emails
+const VERIFICATION_CODE_PATTERNS = [
+  /\b(\d{4,8})\b/,  // 4-8 digit codes
+  /code[:\s]+(\w{4,8})/i,
+  /verification[:\s]+(\w{4,8})/i,
+  /enter[:\s]+(\w{4,8})/i
+];
+
+interface EmailVerificationContext {
+  signupTabId: number;
+  signupUrl: string;
+  serviceName: string;
+  detectedAt: number;
+  emailTabId?: number;
+}
 
 interface AutonomousState {
   status: 'idle' | 'running' | 'paused';
-  currentPhase: 'discovering' | 'browsing' | 'social' | 'email' | 'reading' | 'waiting';
+  currentPhase: 'discovering' | 'browsing' | 'social' | 'email' | 'reading' | 'waiting' | 'verifying';
   discoveredUrls: string[];
   visitedUrls: Set<string>;
   emailVerificationPending: boolean;
   emailCheckScheduledAt: number | null;
+  emailVerificationContext: EmailVerificationContext | null;
   sessionStartTime: number;
   actionsThisSession: number;
+  openedTabIds: number[];
+  lastTabCleanup: number;
+  mainTabId: number | null;
 }
 
 export class AutonomousAgent extends BaseAgent {
@@ -43,6 +66,7 @@ export class AutonomousAgent extends BaseAgent {
   private autonomousState: AutonomousState;
   private perplexityModel: string;
   private mainLoopInterval: ReturnType<typeof setInterval> | null = null;
+  private tabCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     llm: OpenRouterService,
@@ -51,7 +75,7 @@ export class AutonomousAgent extends BaseAgent {
   ) {
     super('autonomous', llm, {
       model,
-      maxIterations: 15,
+      maxIterations: 20, // More iterations for deeper interaction
       temperature: 0.8
     });
 
@@ -68,8 +92,12 @@ export class AutonomousAgent extends BaseAgent {
       visitedUrls: new Set(),
       emailVerificationPending: false,
       emailCheckScheduledAt: null,
+      emailVerificationContext: null,
       sessionStartTime: Date.now(),
-      actionsThisSession: 0
+      actionsThisSession: 0,
+      openedTabIds: [],
+      lastTabCleanup: Date.now(),
+      mainTabId: null
     };
   }
 
@@ -82,25 +110,35 @@ export class AutonomousAgent extends BaseAgent {
 ${personaInfo}
 
 Your goal is to browse the web naturally, as if you were this person going about their daily online activities. This includes:
-- Visiting websites related to interests and hobbies
-- Checking and using social media platforms
-- Reading articles and watching content
-- Sometimes shopping or researching products
-- Occasionally checking email
-- Taking natural breaks and pausing
+- Clicking on interesting links, articles, and content ON THE CURRENT PAGE
+- Reading and scrolling through content before moving on
+- Interacting with elements like buttons, links, and forms
+- Sometimes liking, upvoting, or engaging with content
+- Taking natural pauses to "read" content
 
-IMPORTANT BEHAVIORS:
-1. Act naturally - don't rush through pages. Scroll, read, hover over things.
-2. Make human-like decisions about what links to click.
-3. Show genuine interest in content that matches the persona's interests.
-4. Vary your browsing patterns - don't follow the same sequence every time.
-5. If you see a "check your email" or "verify your email" message after signing up, acknowledge it but continue browsing. Email will be checked automatically after a delay.
+CRITICAL BEHAVIORS:
+1. STAY ON THE PAGE - Don't immediately navigate to a new site. Explore the current page first!
+2. CLICK THINGS - Click on articles, posts, links, buttons that interest the persona
+3. SCROLL AND READ - Spend time scrolling through content, not just jumping around
+4. BE CURIOUS - Follow interesting links within the same site before leaving
+5. INTERACT - Like posts, expand comments, hover over things, click tabs
 
-When you need to navigate, use the navigate_to tool with full URLs.
-When interacting with pages, use click_element with the element index.
-For typing, first click on input fields, then use type_text.
+Do NOT just navigate to new URLs constantly. A real person would:
+- Click on a Reddit post and read comments before moving on
+- Watch part of a YouTube video, not just load the homepage
+- Click through product pages on Amazon, read reviews
+- Scroll through social feeds and engage with posts
 
-Always provide reasoning for your actions in your responses.`;
+When you see "check your email" or "verification code" messages, acknowledge it and continue browsing - the email check is handled separately.
+
+Use these tools naturally:
+- click_element: Click on interesting content (USE THIS A LOT)
+- scroll_page: Scroll to see more content
+- type_text: Fill in forms or search boxes
+- wait: Pause to "read" content (5-15 seconds)
+- navigate_to: Only when you want to visit a completely different site
+
+After 5-10 meaningful interactions on a page, use the complete tool.`;
   }
 
   private buildPersonaContext(persona: PersonaProfile): string {
@@ -135,12 +173,12 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
       {
         type: 'function',
         function: {
-          name: 'search_google',
-          description: 'Search Google for a query',
+          name: 'search_on_page',
+          description: 'Search for something using the search box on the current page',
           parameters: {
             type: 'object',
             properties: {
-              query: { type: 'string', description: 'The search query' }
+              query: { type: 'string', description: 'What to search for' }
             },
             required: ['query']
           }
@@ -149,14 +187,14 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
       {
         type: 'function',
         function: {
-          name: 'read_article',
-          description: 'Spend time reading the current article/page with natural scrolling',
+          name: 'read_content',
+          description: 'Spend time reading the current content with natural scrolling',
           parameters: {
             type: 'object',
             properties: {
               duration_seconds: {
                 type: 'number',
-                description: 'How long to spend reading (10-120 seconds)'
+                description: 'How long to spend reading (10-60 seconds)'
               }
             },
             required: ['duration_seconds']
@@ -166,45 +204,22 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
       {
         type: 'function',
         function: {
-          name: 'browse_feed',
-          description: 'Browse through a social feed or list with natural scrolling',
+          name: 'engage_with_content',
+          description: 'Like, upvote, or react to content on social media',
           parameters: {
             type: 'object',
             properties: {
-              duration_seconds: {
+              action: {
+                type: 'string',
+                enum: ['like', 'upvote', 'heart', 'react'],
+                description: 'Type of engagement'
+              },
+              element_index: {
                 type: 'number',
-                description: 'How long to browse (30-300 seconds)'
+                description: 'Index of the element to engage with'
               }
             },
-            required: ['duration_seconds']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'take_break',
-          description: 'Take a short break from browsing (simulate looking away, thinking, etc)',
-          parameters: {
-            type: 'object',
-            properties: {
-              duration_seconds: {
-                type: 'number',
-                description: 'Break duration (5-60 seconds)'
-              }
-            },
-            required: ['duration_seconds']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'check_email',
-          description: 'Navigate to email inbox to check for new messages',
-          parameters: {
-            type: 'object',
-            properties: {}
+            required: ['action', 'element_index']
           }
         }
       }
@@ -215,23 +230,37 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
     this.autonomousState.actionsThisSession++;
 
     switch (name) {
-      case 'take_break':
-        const breakDuration = Math.min(60, Math.max(5, args.duration_seconds || 15));
-        await this.sleep(breakDuration * 1000);
-        this.logActivity({ type: 'break', details: { duration: breakDuration } });
-        return `Took a ${breakDuration} second break`;
+      case 'read_content': {
+        const duration = Math.min(60, Math.max(10, args.duration_seconds || 20));
+        // Simulate reading with gradual scrolling
+        const scrollSteps = Math.floor(duration / 5);
+        for (let i = 0; i < scrollSteps; i++) {
+          await this.executeTool('scroll_page', { direction: 'down', amount: 200 + Math.random() * 200 });
+          await this.sleep(4000 + Math.random() * 2000);
+        }
+        this.logActivity({ type: 'article_read', details: { duration } });
+        return `Read content for ${duration} seconds with natural scrolling`;
+      }
+
+      case 'engage_with_content': {
+        await this.executeTool('click_element', { index: args.element_index });
+        this.logActivity({ type: 'social_react', details: { action: args.action } });
+        return `Engaged with content: ${args.action}`;
+      }
+
+      case 'search_on_page': {
+        // Find search input, click it, type query
+        const searchResult = await this.executeTool('extract_content', {});
+        this.logActivity({ type: 'search', details: { query: args.query } });
+        // Type in focused search and press enter
+        await this.executeTool('type_text', { text: args.query, press_enter: true });
+        return `Searched for: ${args.query}`;
+      }
 
       case 'check_email':
         return this.handleCheckEmail();
 
-      case 'search_google':
-        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(args.query)}`;
-        const result = await this.executeTool('navigate_to', { url: searchUrl });
-        this.logActivity({ type: 'search', details: { query: args.query } });
-        return result?.result || `Searched for: ${args.query}`;
-
       default:
-        // Use the base tool executor
         const response = await this.executeTool(name, args);
         return response?.result || JSON.stringify(response);
     }
@@ -259,11 +288,187 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
     return 'Could not determine email URL';
   }
 
+  // Smart email verification: opens email in new tab, finds code, returns to signup
+  private async handleEmailVerification(
+    onUpdate?: (update: { type: string; data: any }) => void
+  ): Promise<boolean> {
+    const context = this.autonomousState.emailVerificationContext;
+    if (!context) return false;
+
+    const persona = this.personaEngine?.getPersona();
+    if (!persona?.email) return false;
+
+    onUpdate?.({ type: 'phase', data: { phase: 'verifying', step: 'opening_email' } });
+
+    try {
+      // Open email in a new tab
+      const emailUrls: Record<string, string> = {
+        gmail: 'https://mail.google.com',
+        outlook: 'https://outlook.live.com/mail',
+        yahoo: 'https://mail.yahoo.com',
+        protonmail: 'https://mail.proton.me'
+      };
+      const emailUrl = emailUrls[persona.email.provider] || persona.email.loginUrl;
+
+      if (!emailUrl) return false;
+
+      // Create new tab for email
+      const newTabResult = await this.executeTool('navigate_to', { url: emailUrl });
+
+      // Wait for email page to load
+      await this.sleep(5000);
+
+      onUpdate?.({ type: 'phase', data: { phase: 'verifying', step: 'searching_email' } });
+
+      // Look for verification email - search by service name or "verification"
+      const searchTerms = [context.serviceName, 'verification', 'verify', 'confirm', 'code'];
+
+      // Get page content to analyze emails
+      const pageContent = await this.executeTool('extract_content', {});
+      const content = pageContent?.result || pageContent || '';
+
+      // Try to find and click on a recent verification email
+      // Look for emails with verification-related subjects
+      let found = false;
+      const emailKeywords = ['verify', 'verification', 'confirm', 'code', context.serviceName.toLowerCase()];
+
+      // Run the LLM to find and extract the verification code
+      const extractTask = `You are looking at an email inbox. Find the most recent verification/confirmation email from ${context.serviceName} (or any service) sent in the last 5 minutes.
+
+Steps:
+1. Click on the verification email to open it
+2. Look for a verification code (usually 4-8 digits or characters)
+3. Once you find the code, use the complete tool with the code as the summary
+
+If you can't find a verification email, use complete with "NO_CODE_FOUND".`;
+
+      const extractResult = await this.run(extractTask, onUpdate);
+
+      // Check if we got a code
+      let verificationCode: string | null = null;
+      for (const pattern of VERIFICATION_CODE_PATTERNS) {
+        const match = extractResult.match(pattern);
+        if (match && match[1]) {
+          verificationCode = match[1];
+          break;
+        }
+      }
+
+      if (!verificationCode || verificationCode === 'NO_CODE_FOUND') {
+        onUpdate?.({ type: 'phase', data: { phase: 'verifying', step: 'code_not_found' } });
+        return false;
+      }
+
+      onUpdate?.({ type: 'phase', data: { phase: 'verifying', step: 'entering_code', code: verificationCode } });
+
+      // Navigate back to the signup tab
+      await this.executeTool('navigate_to', { url: context.signupUrl });
+      await this.sleep(3000);
+
+      // Enter the verification code
+      const enterCodeTask = `You need to enter the verification code "${verificationCode}" on this page.
+
+Look for an input field for the verification code and:
+1. Click on the input field
+2. Type the code: ${verificationCode}
+3. Click any submit/verify button if present
+4. Use complete when done`;
+
+      await this.run(enterCodeTask, onUpdate);
+
+      this.logActivity({
+        type: 'email_verify',
+        details: { service: context.serviceName, success: true }
+      });
+
+      // Clear the verification context
+      this.autonomousState.emailVerificationContext = null;
+      this.autonomousState.emailVerificationPending = false;
+
+      return true;
+    } catch (error) {
+      console.error('Email verification failed:', error);
+      onUpdate?.({ type: 'error', data: { error: 'Email verification failed' } });
+      return false;
+    }
+  }
+
+  // Tab cleanup - close old tabs periodically
+  private async cleanupTabs(): Promise<void> {
+    const now = Date.now();
+    const minInterval = 60 * 1000; // At least 1 minute between cleanups
+
+    if (now - this.autonomousState.lastTabCleanup < minInterval) {
+      return;
+    }
+
+    try {
+      // Get all tabs
+      const tabs = await chrome.tabs.query({});
+
+      // Keep track of tabs we should NOT close
+      const protectedTabIds = new Set<number>();
+
+      // Protect main tab
+      if (this.autonomousState.mainTabId) {
+        protectedTabIds.add(this.autonomousState.mainTabId);
+      }
+
+      // Protect tab with pending verification
+      if (this.autonomousState.emailVerificationContext?.signupTabId) {
+        protectedTabIds.add(this.autonomousState.emailVerificationContext.signupTabId);
+      }
+      if (this.autonomousState.emailVerificationContext?.emailTabId) {
+        protectedTabIds.add(this.autonomousState.emailVerificationContext.emailTabId);
+      }
+
+      // Protect current active tab
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab?.id) {
+        protectedTabIds.add(activeTab.id);
+      }
+
+      // Close tabs that we opened and are not protected
+      // Keep only the most recent 3-5 tabs
+      const maxTabs = 3 + Math.floor(Math.random() * 3); // 3-5 tabs
+      const tabsToConsider = this.autonomousState.openedTabIds
+        .filter(id => !protectedTabIds.has(id));
+
+      if (tabsToConsider.length > maxTabs) {
+        const tabsToClose = tabsToConsider.slice(0, tabsToConsider.length - maxTabs);
+
+        for (const tabId of tabsToClose) {
+          try {
+            await chrome.tabs.remove(tabId);
+            this.autonomousState.openedTabIds = this.autonomousState.openedTabIds.filter(id => id !== tabId);
+          } catch (e) {
+            // Tab might already be closed
+          }
+        }
+      }
+
+      this.autonomousState.lastTabCleanup = now;
+    } catch (error) {
+      console.error('Tab cleanup failed:', error);
+    }
+  }
+
+  // Schedule next tab cleanup with random interval (1-5 minutes)
+  private scheduleTabCleanup(): void {
+    if (this.tabCleanupInterval) {
+      clearInterval(this.tabCleanupInterval);
+    }
+
+    const interval = (60 + Math.random() * 240) * 1000; // 1-5 minutes
+    this.tabCleanupInterval = setInterval(() => {
+      this.cleanupTabs();
+    }, interval);
+  }
+
   // Discover starting URLs based on persona using Perplexity
   async discoverStartingUrls(): Promise<string[]> {
     const persona = this.personaEngine?.getPersona();
     if (!persona) {
-      // Return some default starting points
       return [
         'https://www.google.com',
         'https://www.reddit.com',
@@ -279,18 +484,13 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
         details: { phase: 'discovering', query }
       });
 
-      // Use Perplexity to search for relevant URLs
       const searchResult = await this.llm.searchWithPerplexity(query, this.perplexityModel);
-
-      // Extract URLs from the search result
       const urls = this.extractUrlsFromText(searchResult);
 
-      // Add persona's favorite sites
       const favoriteSites = persona.browsingHabits.favoriteSites
         .map(site => this.normalizeUrl(site))
         .filter(url => url !== null) as string[];
 
-      // Add social media platforms
       const socialUrls = persona.socialMedia.platforms
         .filter(p => p.usage !== 'occasional')
         .map(p => this.getSocialMediaUrl(p.name));
@@ -298,38 +498,30 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
       const allUrls = [...new Set([...urls, ...favoriteSites, ...socialUrls])];
       this.autonomousState.discoveredUrls = allUrls;
 
-      return allUrls.slice(0, 10); // Return top 10 URLs
+      return allUrls.slice(0, 10);
     } catch (error) {
       console.error('Error discovering URLs:', error);
-      // Fallback to persona favorites
       return persona.browsingHabits.favoriteSites.slice(0, 5)
         .map(site => this.normalizeUrl(site))
         .filter(url => url !== null) as string[];
     }
   }
 
-  // Normalize a site name or URL to a proper URL
   private normalizeUrl(site: string): string | null {
     if (!site) return null;
 
     let url = site.trim();
 
-    // Already a full URL
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return url;
     }
 
-    // Remove any leading www.
     url = url.replace(/^www\./i, '');
-
-    // Check if it already has a TLD (ends with .something)
     const hasTld = /\.[a-z]{2,}$/i.test(url);
 
     if (hasTld) {
-      // Already has a TLD, just add protocol
       return `https://${url}`;
     } else {
-      // No TLD, add www and .com
       const cleanSite = url.toLowerCase().replace(/\s+/g, '');
       return `https://www.${cleanSite}.com`;
     }
@@ -345,12 +537,10 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
   private extractUrlsFromText(text: string): string[] {
     const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
     const matches = text.match(urlRegex) || [];
-    // Clean up URLs (remove trailing punctuation)
     return matches.map(url => url.replace(/[.,;:!?)]+$/, ''));
   }
 
   private getSocialMediaUrl(platform: string): string {
-    // Known platforms with non-standard URLs
     const urls: Record<string, string> = {
       'twitter/x': 'https://twitter.com',
       'x': 'https://twitter.com',
@@ -364,11 +554,9 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
       return urls[platformLower];
     }
 
-    // Use normalizeUrl for everything else
     return this.normalizeUrl(platform) || `https://www.${platformLower.replace(/\s+/g, '')}.com`;
   }
 
-  // Check page content for email verification prompts
   checkForEmailVerification(pageContent: string): boolean {
     for (const pattern of EMAIL_VERIFICATION_PATTERNS) {
       if (pattern.test(pageContent)) {
@@ -378,17 +566,40 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
     return false;
   }
 
-  // Schedule email check with random delay (1-3 minutes)
-  scheduleEmailCheck(): void {
+  // Extract service name from URL for email matching
+  private extractServiceName(url: string): string {
+    try {
+      const hostname = new URL(url).hostname;
+      // Remove common prefixes and TLD
+      return hostname
+        .replace(/^www\./, '')
+        .replace(/\.(com|org|net|io|co)$/, '')
+        .split('.')[0];
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  scheduleEmailVerification(signupTabId: number, signupUrl: string): void {
     if (this.autonomousState.emailVerificationPending) return;
 
     const delayMs = (60 + Math.random() * 120) * 1000; // 1-3 minutes
     this.autonomousState.emailVerificationPending = true;
     this.autonomousState.emailCheckScheduledAt = Date.now() + delayMs;
+    this.autonomousState.emailVerificationContext = {
+      signupTabId,
+      signupUrl,
+      serviceName: this.extractServiceName(signupUrl),
+      detectedAt: Date.now()
+    };
 
     this.logActivity({
       type: 'email_check',
-      details: { scheduled: true, delaySeconds: Math.round(delayMs / 1000) }
+      details: {
+        scheduled: true,
+        delaySeconds: Math.round(delayMs / 1000),
+        service: this.autonomousState.emailVerificationContext.serviceName
+      }
     });
   }
 
@@ -401,6 +612,17 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
     this.autonomousState = this.createInitialState();
     this.autonomousState.status = 'running';
     this.state.status = 'running';
+
+    // Start tab cleanup schedule
+    this.scheduleTabCleanup();
+
+    // Remember main tab
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab?.id) {
+        this.autonomousState.mainTabId = activeTab.id;
+      }
+    } catch (e) {}
 
     onUpdate?.({
       type: 'status',
@@ -438,9 +660,12 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
     onUpdate?: (update: { type: string; data: any }) => void
   ): Promise<void> {
     let urlIndex = 0;
+    let interactionsOnCurrentPage = 0;
+    const minInteractionsPerPage = 5;
+    const maxInteractionsPerPage = 12;
+    let targetInteractions = minInteractionsPerPage + Math.floor(Math.random() * (maxInteractionsPerPage - minInteractionsPerPage));
 
     while (this.autonomousState.status === 'running') {
-      // Check if we should pause
       if (this.state.status === 'paused') {
         await this.sleep(1000);
         continue;
@@ -452,128 +677,164 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
         this.autonomousState.emailCheckScheduledAt &&
         Date.now() >= this.autonomousState.emailCheckScheduledAt
       ) {
-        this.autonomousState.currentPhase = 'email';
-        onUpdate?.({ type: 'phase', data: { phase: 'email', reason: 'verification' } });
+        this.autonomousState.currentPhase = 'verifying';
+        onUpdate?.({ type: 'phase', data: { phase: 'verifying' } });
 
-        await this.handleCheckEmail();
-        this.autonomousState.emailVerificationPending = false;
-        this.autonomousState.emailCheckScheduledAt = null;
-
-        // Wait a bit after checking email
-        await this.sleep(3000 + Math.random() * 5000);
+        await this.handleEmailVerification(onUpdate);
         this.autonomousState.currentPhase = 'browsing';
       }
 
-      // Get next URL to visit
-      const url = urls[urlIndex % urls.length];
-      urlIndex++;
+      // Periodic tab cleanup
+      await this.cleanupTabs();
 
-      // Avoid re-visiting recently visited URLs
-      if (this.autonomousState.visitedUrls.has(url) && urlIndex < urls.length * 2) {
-        continue;
+      // Only navigate to a new URL after sufficient interactions on current page
+      if (interactionsOnCurrentPage >= targetInteractions || interactionsOnCurrentPage === 0) {
+        const url = urls[urlIndex % urls.length];
+        urlIndex++;
+
+        // Skip recently visited
+        if (this.autonomousState.visitedUrls.has(url) && urlIndex < urls.length * 2) {
+          continue;
+        }
+
+        try {
+          // Navigate to new URL
+          await this.executeTool('navigate_to', { url });
+          this.autonomousState.visitedUrls.add(url);
+
+          // Track this tab
+          try {
+            const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (activeTab?.id && !this.autonomousState.openedTabIds.includes(activeTab.id)) {
+              this.autonomousState.openedTabIds.push(activeTab.id);
+            }
+          } catch (e) {}
+
+          await this.sleep(3000); // Wait for page load
+
+          onUpdate?.({
+            type: 'navigation',
+            data: { url }
+          });
+
+          // Reset interaction counter for new page
+          interactionsOnCurrentPage = 0;
+          targetInteractions = minInteractionsPerPage + Math.floor(Math.random() * (maxInteractionsPerPage - minInteractionsPerPage));
+
+        } catch (error) {
+          console.error(`Error navigating to ${url}:`, error);
+          await this.sleep(2000);
+          continue;
+        }
       }
 
       try {
-        // Navigate to URL
-        await this.executeTool('navigate_to', { url });
-        this.autonomousState.visitedUrls.add(url);
-        await this.sleep(2000); // Wait for page load
-
-        // Get updated page content
+        // Get current page state
         const pageInfo = await this.executeTool('get_page_info', {});
         const content = await this.executeTool('extract_content', {});
-
-        onUpdate?.({
-          type: 'navigation',
-          data: { url, title: pageInfo?.title }
-        });
+        const currentUrl = pageInfo?.url || '';
 
         // Check for email verification prompts
-        if (this.checkForEmailVerification(content?.result || content || '')) {
-          this.scheduleEmailCheck();
-          onUpdate?.({
-            type: 'email_verification_detected',
-            data: { scheduledIn: '1-3 minutes' }
-          });
+        const contentStr = content?.result || content || '';
+        if (this.checkForEmailVerification(contentStr)) {
+          try {
+            const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (activeTab?.id) {
+              this.scheduleEmailVerification(activeTab.id, currentUrl);
+              onUpdate?.({
+                type: 'email_verification_detected',
+                data: { scheduledIn: '1-3 minutes', service: this.extractServiceName(currentUrl) }
+              });
+            }
+          } catch (e) {}
         }
 
-        // Update context for agent
+        // Update context
         this.setContext({
-          url,
-          pageContent: content?.result || content,
+          url: currentUrl,
+          pageContent: contentStr,
         });
 
-        // Run a browsing iteration with the LLM
-        const task = this.generateBrowsingTask(url);
+        // Generate task that emphasizes interaction over navigation
+        const task = this.generateInteractionTask(currentUrl, interactionsOnCurrentPage, targetInteractions);
+
         await this.run(task, (update) => {
           onUpdate?.({
             type: update.type,
-            data: { ...update.data, url }
+            data: { ...update.data, url: currentUrl }
           });
         });
 
-        // Natural pause between pages
-        const pauseDuration = 2000 + Math.random() * 5000;
+        interactionsOnCurrentPage++;
+
+        // Natural pause between interactions
+        const pauseDuration = 1000 + Math.random() * 3000;
         await this.sleep(pauseDuration);
 
-        // Occasionally take a break
-        if (Math.random() < 0.1) {
-          const breakDuration = 5 + Math.random() * 20;
+        // Occasionally take a longer break
+        if (Math.random() < 0.05) {
+          const breakDuration = 5 + Math.random() * 15;
           onUpdate?.({ type: 'break', data: { duration: breakDuration } });
           await this.sleep(breakDuration * 1000);
         }
 
-        // Occasionally check email randomly
-        if (Math.random() < 0.05) {
-          this.autonomousState.currentPhase = 'email';
-          await this.handleCheckEmail();
-          await this.sleep(10000 + Math.random() * 20000);
-          this.autonomousState.currentPhase = 'browsing';
-        }
-
       } catch (error) {
-        console.error(`Error browsing ${url}:`, error);
+        console.error('Error during interaction:', error);
         onUpdate?.({
           type: 'error',
-          data: { url, error: error instanceof Error ? error.message : String(error) }
+          data: { error: error instanceof Error ? error.message : String(error) }
         });
-        // Continue to next URL
         await this.sleep(2000);
+        interactionsOnCurrentPage++; // Count failed attempt to avoid infinite loop
       }
     }
   }
 
-  private generateBrowsingTask(url: string): string {
+  private generateInteractionTask(url: string, currentInteractions: number, targetInteractions: number): string {
     const persona = this.personaEngine?.getPersona();
     const domain = new URL(url).hostname;
+    const remaining = targetInteractions - currentInteractions;
 
-    let task = `You are currently on ${domain}. `;
+    let task = `You are browsing ${domain}. `;
 
-    // Add persona-specific context
-    if (persona) {
-      if (domain.includes('reddit')) {
-        task += `Browse Reddit as someone interested in ${persona.interests.slice(0, 2).join(' and ')}. Look for interesting posts, maybe upvote or explore comments.`;
-      } else if (domain.includes('youtube')) {
-        task += `Browse YouTube looking for videos about ${persona.interests[0] || 'trending topics'}. Watch recommendations, scroll through home page.`;
-      } else if (domain.includes('instagram') || domain.includes('twitter') || domain.includes('facebook')) {
-        task += `Browse your social feed naturally. Scroll through posts, maybe like some content, view some profiles.`;
-      } else if (domain.includes('amazon') || domain.includes('shop')) {
-        task += `Browse products casually, maybe look at ${persona.interests[0] || 'interesting items'}. Check reviews, compare prices.`;
-      } else if (domain.includes('news') || domain.includes('cnn') || domain.includes('bbc')) {
-        task += `Read some news articles that catch your interest. Scroll through headlines, click on interesting stories.`;
-      } else {
-        task += `Explore this website naturally based on your interests (${persona.interests.slice(0, 3).join(', ')}). Click on interesting content, scroll around, read what catches your eye.`;
-      }
+    if (currentInteractions === 0) {
+      task += `This is a fresh page. Take a moment to look around. `;
     } else {
-      task += `Explore this website naturally. Click on interesting content, scroll around, interact with the page as a normal user would.`;
+      task += `You've done ${currentInteractions} things on this page. Do ${remaining} more before moving on. `;
     }
 
-    task += ` After exploring for a bit (3-5 actions), use the complete tool to summarize what you did.`;
+    if (persona) {
+      const interests = persona.interests.slice(0, 2).join(' and ');
+
+      if (domain.includes('reddit')) {
+        task += `As someone into ${interests}, find an interesting post to click on and read. Maybe check the comments or upvote something good.`;
+      } else if (domain.includes('youtube')) {
+        task += `Look for a video about ${interests} to click on. Or scroll through recommendations and click something interesting.`;
+      } else if (domain.includes('instagram') || domain.includes('twitter') || domain.includes('facebook')) {
+        task += `Scroll through the feed. Like a post or two. Click on an interesting profile or story.`;
+      } else if (domain.includes('amazon') || domain.includes('shop')) {
+        task += `Click on a product that looks interesting. Check the reviews. Add something to cart for fun.`;
+      } else if (domain.includes('news') || domain.includes('cnn') || domain.includes('bbc')) {
+        task += `Click on a headline that catches your eye. Read the article a bit before moving on.`;
+      } else {
+        task += `Explore naturally based on your interests (${interests}). Click on something interesting, scroll around, interact with the page.`;
+      }
+    } else {
+      task += `Click on something interesting, scroll around, explore the page naturally.`;
+    }
+
+    task += `
+
+DO NOT use navigate_to unless you want to go to a completely different website.
+Use click_element to interact with links and buttons ON THIS PAGE.
+Use scroll_page to see more content.
+Use read_content or wait to spend time "reading".
+
+After your action, use complete to summarize what you did.`;
 
     return task;
   }
 
-  // Control methods
   pause(): void {
     this.state.status = 'paused';
     this.autonomousState.status = 'paused';
@@ -592,6 +853,10 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
     if (this.mainLoopInterval) {
       clearInterval(this.mainLoopInterval);
       this.mainLoopInterval = null;
+    }
+    if (this.tabCleanupInterval) {
+      clearInterval(this.tabCleanupInterval);
+      this.tabCleanupInterval = null;
     }
   }
 
