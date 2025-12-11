@@ -1,11 +1,34 @@
 // ============================================
 // OpenRouter LLM Service
-// Multi-model support with Perplexity integration
+// Multi-model support with compatibility for all major AI families
 // ============================================
 
 import { LLMMessage, Tool, ToolCall } from '../shared/types';
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
+// Model family detection
+type ModelFamily = 'claude' | 'openai' | 'gemini' | 'llama' | 'mistral' | 'perplexity' | 'other';
+
+function detectModelFamily(model: string): ModelFamily {
+  const modelLower = model.toLowerCase();
+  if (modelLower.includes('claude') || modelLower.includes('anthropic')) return 'claude';
+  if (modelLower.includes('gpt') || modelLower.includes('openai') || modelLower.includes('o1')) return 'openai';
+  if (modelLower.includes('gemini') || modelLower.includes('google')) return 'gemini';
+  if (modelLower.includes('llama') || modelLower.includes('meta')) return 'llama';
+  if (modelLower.includes('mistral') || modelLower.includes('mixtral')) return 'mistral';
+  if (modelLower.includes('perplexity') || modelLower.includes('sonar')) return 'perplexity';
+  return 'other';
+}
+
+// Check if model supports tool/function calling
+function supportsToolCalls(model: string): boolean {
+  const family = detectModelFamily(model);
+  // Most modern models support tool calls
+  // Perplexity models are for search, not tool use
+  if (family === 'perplexity') return false;
+  return true;
+}
 
 export interface OpenRouterResponse {
   id: string;
@@ -16,6 +39,7 @@ export interface OpenRouterResponse {
       role: string;
       content: string | null;
       tool_calls?: ToolCall[];
+      reasoning?: string; // Gemini reasoning tokens
     };
     finish_reason: string;
   }[];
@@ -55,6 +79,9 @@ export class OpenRouterService {
   private baseUrl: string;
   private defaultModel: string;
 
+  // Store reasoning blocks for Gemini models
+  private reasoningCache: Map<string, string> = new Map();
+
   constructor(apiKey: string, defaultModel: string = 'anthropic/claude-3.5-sonnet') {
     this.apiKey = apiKey;
     this.baseUrl = OPENROUTER_BASE_URL;
@@ -69,6 +96,48 @@ export class OpenRouterService {
     this.defaultModel = model;
   }
 
+  // Get model-specific request configuration
+  private getModelConfig(model: string, hasTools: boolean): Record<string, any> {
+    const family = detectModelFamily(model);
+    const config: Record<string, any> = {};
+
+    switch (family) {
+      case 'gemini':
+        // Gemini requires reasoning to be included for tool calls
+        if (hasTools) {
+          config.include_reasoning = true;
+          // Gemini also needs this provider setting
+          config.provider = {
+            order: ['Google AI Studio', 'Google'],
+            require_parameters: true
+          };
+        }
+        break;
+
+      case 'claude':
+        // Claude works well with default settings
+        break;
+
+      case 'openai':
+        // OpenAI/GPT works well with default settings
+        break;
+
+      case 'llama':
+      case 'mistral':
+        // These may need parallel tool calls disabled for stability
+        if (hasTools) {
+          config.parallel_tool_calls = false;
+        }
+        break;
+
+      case 'perplexity':
+        // Perplexity is for search - no special config needed
+        break;
+    }
+
+    return config;
+  }
+
   async chat(
     messages: LLMMessage[],
     model?: string,
@@ -76,25 +145,46 @@ export class OpenRouterService {
     options: LLMOptions = {}
   ): Promise<OpenRouterResponse> {
     const selectedModel = model || this.defaultModel;
+    const family = detectModelFamily(selectedModel);
+    const hasTools = tools && tools.length > 0 && supportsToolCalls(selectedModel);
+
+    // Build messages, preserving reasoning for Gemini
+    const formattedMessages = messages.map(msg => {
+      const formatted: any = {
+        role: msg.role,
+        content: msg.content,
+      };
+
+      if (msg.tool_call_id) formatted.tool_call_id = msg.tool_call_id;
+      if (msg.name) formatted.name = msg.name;
+      if (msg.tool_calls) formatted.tool_calls = msg.tool_calls;
+
+      // For Gemini: preserve reasoning in assistant messages
+      if (family === 'gemini' && msg.role === 'assistant' && typeof msg.content === 'string') {
+        const reasoning = this.reasoningCache.get(msg.content || '');
+        if (reasoning) {
+          formatted.reasoning = reasoning;
+        }
+      }
+
+      return formatted;
+    });
 
     const requestBody: any = {
       model: selectedModel,
-      messages: messages.map(msg => ({
-        role: msg.role,
-        content: msg.content,
-        ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
-        ...(msg.name && { name: msg.name }),
-        ...(msg.tool_calls && { tool_calls: msg.tool_calls })
-      })),
+      messages: formattedMessages,
       temperature: options.temperature ?? 0.7,
       max_tokens: options.maxTokens ?? 4096,
       top_p: options.topP ?? 1,
       frequency_penalty: options.frequencyPenalty ?? 0,
       presence_penalty: options.presencePenalty ?? 0,
-      stream: false
+      stream: false,
+      // Add model-specific configuration
+      ...this.getModelConfig(selectedModel, hasTools || false)
     };
 
-    if (tools && tools.length > 0) {
+    // Only add tools if the model supports them
+    if (hasTools) {
       requestBody.tools = tools;
       requestBody.tool_choice = 'auto';
     }
@@ -116,10 +206,32 @@ export class OpenRouterService {
 
     if (!response.ok) {
       const error = await response.text();
+
+      // Provide helpful error messages for common issues
+      if (response.status === 400 && error.includes('thought_signature')) {
+        throw new Error(`Gemini tool call error: This model requires reasoning tokens. Try using Claude or GPT models, or disable tool calls.`);
+      }
+      if (response.status === 401) {
+        throw new Error(`Invalid API key. Please check your OpenRouter API key in settings.`);
+      }
+      if (response.status === 429) {
+        throw new Error(`Rate limit exceeded. Please wait a moment and try again.`);
+      }
+
       throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
     }
 
-    return response.json();
+    const result = await response.json();
+
+    // Cache reasoning for Gemini models
+    if (family === 'gemini' && result.choices?.[0]?.message?.reasoning) {
+      const content = result.choices[0].message.content;
+      if (typeof content === 'string' && content) {
+        this.reasoningCache.set(content, result.choices[0].message.reasoning);
+      }
+    }
+
+    return result;
   }
 
   async *streamChat(
@@ -129,6 +241,7 @@ export class OpenRouterService {
     options: LLMOptions = {}
   ): AsyncGenerator<StreamChunk> {
     const selectedModel = model || this.defaultModel;
+    const hasTools = tools && tools.length > 0 && supportsToolCalls(selectedModel);
 
     const requestBody: any = {
       model: selectedModel,
@@ -141,10 +254,11 @@ export class OpenRouterService {
       })),
       temperature: options.temperature ?? 0.7,
       max_tokens: options.maxTokens ?? 4096,
-      stream: true
+      stream: true,
+      ...this.getModelConfig(selectedModel, hasTools || false)
     };
 
-    if (tools && tools.length > 0) {
+    if (hasTools) {
       requestBody.tools = tools;
       requestBody.tool_choice = 'auto';
     }
@@ -211,6 +325,7 @@ export class OpenRouterService {
       }
     ];
 
+    // Perplexity models don't use tools, just direct search
     const response = await this.chat(messages, model, undefined, {
       temperature: 0.3,
       maxTokens: 2048
@@ -228,7 +343,14 @@ export class OpenRouterService {
 
     for (const toolCall of toolCalls) {
       try {
-        const args = JSON.parse(toolCall.function.arguments);
+        // Handle different argument formats
+        let args: Record<string, any>;
+        if (typeof toolCall.function.arguments === 'string') {
+          args = JSON.parse(toolCall.function.arguments);
+        } else {
+          args = toolCall.function.arguments as Record<string, any>;
+        }
+
         const result = await toolExecutor(toolCall.function.name, args);
 
         toolResults.push({
@@ -257,11 +379,16 @@ export class OpenRouterService {
     maxIterations: number = 10,
     onIteration?: (iteration: number, message: LLMMessage) => void
   ): Promise<string> {
+    const selectedModel = model || this.defaultModel;
+
+    // If model doesn't support tools, run without them
+    const effectiveTools = supportsToolCalls(selectedModel) ? tools : [];
+
     let currentMessages = [...messages];
     let iteration = 0;
 
     while (iteration < maxIterations) {
-      const response = await this.chat(currentMessages, model, tools);
+      const response = await this.chat(currentMessages, selectedModel, effectiveTools);
       const assistantMessage = response.choices[0]?.message;
 
       if (!assistantMessage) {
@@ -319,6 +446,16 @@ export class OpenRouterService {
     } catch {
       return false;
     }
+  }
+
+  // Get model family for UI display
+  static getModelFamily(model: string): ModelFamily {
+    return detectModelFamily(model);
+  }
+
+  // Check if model supports tool calls
+  static modelSupportsTools(model: string): boolean {
+    return supportsToolCalls(model);
   }
 }
 
