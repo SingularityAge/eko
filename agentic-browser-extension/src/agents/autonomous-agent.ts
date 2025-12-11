@@ -104,41 +104,44 @@ export class AutonomousAgent extends BaseAgent {
   protected getDefaultSystemPrompt(): string {
     const persona = this.personaEngine?.getPersona();
     const personaInfo = persona ? this.buildPersonaContext(persona) : '';
+    const personaEmail = persona?.email?.email || 'the configured email';
 
     return `You are an autonomous web browsing agent simulating authentic human behavior.
 
 ${personaInfo}
 
-Your goal is to browse the web naturally, as if you were this person going about their daily online activities. This includes:
-- Clicking on interesting links, articles, and content ON THE CURRENT PAGE
-- Reading and scrolling through content before moving on
-- Interacting with elements like buttons, links, and forms
-- Sometimes liking, upvoting, or engaging with content
-- Taking natural pauses to "read" content
+Your goal is to browse the web naturally like a real person. Explore pages, click on interesting content, scroll, read, and interact.
 
-CRITICAL BEHAVIORS:
-1. STAY ON THE PAGE - Don't immediately navigate to a new site. Explore the current page first!
-2. CLICK THINGS - Click on articles, posts, links, buttons that interest the persona
-3. SCROLL AND READ - Spend time scrolling through content, not just jumping around
-4. BE CURIOUS - Follow interesting links within the same site before leaving
-5. INTERACT - Like posts, expand comments, hover over things, click tabs
+POPUP & MODAL HANDLING (ALWAYS DO THIS FIRST):
+- Dismiss cookie banners by clicking "Accept", "OK", "I agree"
+- Close newsletter popups with "X", "No thanks", "Close"
+- Dismiss app download prompts with "Continue in browser"
+- For login popups: click "X" or "Continue as guest" to dismiss
 
-Do NOT just navigate to new URLs constantly. A real person would:
-- Click on a Reddit post and read comments before moving on
-- Watch part of a YouTube video, not just load the homepage
-- Click through product pages on Amazon, read reviews
-- Scroll through social feeds and engage with posts
+CRITICAL - LOGIN RULES:
+- NEVER use "Sign in with Google", "Continue with Google", "Sign in with Apple", or any social login
+- If signing up for a service, ONLY use email signup with: ${personaEmail}
+- Always prefer "Sign up with email" or "Create account" over social logins
+- If forced to choose, look for "Other options", "Use email instead", or close the popup
 
-When you see "check your email" or "verification code" messages, acknowledge it and continue browsing - the email check is handled separately.
+BROWSING BEHAVIOR:
+- Stay on the current page and explore it thoroughly before moving on
+- Click on interesting content: articles, posts, products, videos, links
+- Scroll to see more content
+- Spend time "reading" with natural pauses
+- Interact: like posts, expand comments, check reviews
+- Don't rush - a real person takes time to browse
 
-Use these tools naturally:
-- click_element: Click on interesting content (USE THIS A LOT)
-- scroll_page: Scroll to see more content
-- type_text: Fill in forms or search boxes
-- wait: Pause to "read" content (5-15 seconds)
-- navigate_to: Only when you want to visit a completely different site
+When you see "check your email" or "verification code" messages after signup, just continue browsing - email verification is handled automatically.
 
-After 5-10 meaningful interactions on a page, use the complete tool.`;
+TOOLS:
+- click_element: Click on content (use this frequently)
+- scroll_page: Scroll to see more
+- type_text: Fill forms (use persona's email for signups)
+- wait: Pause to read (5-15 seconds)
+- navigate_to: Only for going to a completely different website
+
+After several interactions on a page, use complete to summarize.`;
   }
 
   private buildPersonaContext(persona: PersonaProfile): string {
@@ -845,60 +848,55 @@ Look for an input field for the verification code and:
 
     let task = `You are browsing ${domain}. `;
 
-    // ALWAYS check for popups first
+    // ALWAYS handle popups first
     task += `
 
-FIRST: Check if there are any popups, modals, cookie banners, or overlay dialogs blocking the page. Common ones include:
-- Cookie consent ("Accept cookies", "I agree", "Accept all")
-- Newsletter signup popups ("No thanks", "X" close button, "Maybe later")
-- Login prompts ("Continue as guest", "X" close button)
-- Age verification ("I am over 18", "Enter")
-- Notification permission requests (click "Block" or "X")
-- Any modal with "Close", "X", "Dismiss", "Skip", or "No thanks"
+FIRST - HANDLE ANY POPUPS OR OVERLAYS:
+Look for and DISMISS any popups, modals, or overlays blocking the page:
 
-If you see ANY popup or overlay, CLICK TO DISMISS IT FIRST before doing anything else.
+1. COOKIE BANNERS: Click "Accept", "Accept all", "I agree", "OK", or "Got it"
+
+2. LOGIN/SIGNUP POPUPS:
+   - Click "X", "Close", "Maybe later", "No thanks", or "Continue as guest"
+   - NEVER click "Sign in with Google" or "Sign in with Apple" or "Continue with Google/Apple/Facebook"
+   - If you must sign up, use the email signup option with the persona's email address only
+
+3. NEWSLETTER POPUPS: Click "X", "No thanks", "Not now", or "Close"
+
+4. NOTIFICATION REQUESTS: Click "Block", "Not now", or "X"
+
+5. AGE VERIFICATION: Click "I am over 18", "Yes", or "Enter"
+
+6. APP DOWNLOAD PROMPTS: Click "X", "Continue in browser", or "Not now"
+
+If you see ANY overlay or modal, dismiss it first before doing anything else.
 
 `;
 
     if (currentInteractions === 0) {
-      task += `This is a fresh page. Dismiss any popups, then take a moment to look around. `;
+      task += `This is a fresh page. After dismissing any popups, look around and find something interesting to interact with. `;
     } else {
-      task += `You've done ${currentInteractions} things on this page. Do ${remaining} more before moving on. `;
+      task += `You've done ${currentInteractions} actions. Do ${remaining} more before we move on. `;
     }
 
     if (persona) {
       const interests = persona.interests.slice(0, 2).join(' and ');
-
-      if (domain.includes('reddit')) {
-        task += `As someone into ${interests}, find an interesting post to click on and read. Maybe check the comments or upvote something good.`;
-      } else if (domain.includes('youtube')) {
-        task += `Look for a video about ${interests} to click on. Or scroll through recommendations and click something interesting.`;
-      } else if (domain.includes('instagram') || domain.includes('twitter') || domain.includes('facebook')) {
-        task += `Scroll through the feed. Like a post or two. Click on an interesting profile or story.`;
-      } else if (domain.includes('amazon') || domain.includes('shop')) {
-        task += `Click on a product that looks interesting. Check the reviews. Add something to cart for fun.`;
-      } else if (domain.includes('news') || domain.includes('cnn') || domain.includes('bbc')) {
-        task += `Click on a headline that catches your eye. Read the article a bit before moving on.`;
-      } else if (domain.includes('tripadvisor') || domain.includes('yelp')) {
-        task += `Browse restaurants or attractions. Click on one with good reviews. Read some reviews.`;
-      } else {
-        task += `Explore naturally based on your interests (${interests}). Click on something interesting, scroll around, interact with the page.`;
-      }
+      task += `As someone interested in ${interests}, explore content that appeals to you. Click on interesting links, articles, posts, or products. Scroll to see more. Read things that catch your eye.`;
     } else {
-      task += `Click on something interesting, scroll around, explore the page naturally.`;
+      task += `Explore the page naturally. Click on interesting content, scroll around, interact with what you find.`;
     }
 
     task += `
 
-IMPORTANT RULES:
-- DO NOT use navigate_to - stay on this page
-- Use click_element to interact with links and buttons
+RULES:
+- STAY ON THIS PAGE - do NOT use navigate_to
+- Use click_element to click links, buttons, posts, articles
 - Use scroll_page to see more content
-- Use wait to spend time "reading" (5-15 seconds)
-- If a click doesn't work, try scrolling or clicking something else
-- Don't give up easily - try multiple things
+- Use wait (5-15 seconds) to simulate reading
+- If something doesn't work, try something else
+- Be persistent - explore different parts of the page
 
-After your action, use complete to summarize what you did.`;
+When done with your action, use complete to summarize what you did.`;
 
     return task;
   }
