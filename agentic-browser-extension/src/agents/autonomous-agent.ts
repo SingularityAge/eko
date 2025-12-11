@@ -42,7 +42,7 @@ export class AutonomousAgent extends BaseAgent {
   private personaEngine: PersonaEngine | null;
   private autonomousState: AutonomousState;
   private perplexityModel: string;
-  private mainLoopInterval: NodeJS.Timeout | null = null;
+  private mainLoopInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     llm: OpenRouterService,
