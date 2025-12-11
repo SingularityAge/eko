@@ -8,16 +8,20 @@ import { LLMMessage, Tool, ToolCall } from '../shared/types';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 // Model family detection
-type ModelFamily = 'claude' | 'openai' | 'gemini' | 'llama' | 'mistral' | 'perplexity' | 'other';
+type ModelFamily = 'claude' | 'openai' | 'gemini' | 'llama' | 'mistral' | 'perplexity' | 'grok' | 'deepseek' | 'qwen' | 'cohere' | 'other';
 
 function detectModelFamily(model: string): ModelFamily {
   const modelLower = model.toLowerCase();
   if (modelLower.includes('claude') || modelLower.includes('anthropic')) return 'claude';
-  if (modelLower.includes('gpt') || modelLower.includes('openai') || modelLower.includes('o1')) return 'openai';
+  if (modelLower.includes('gpt') || modelLower.includes('openai') || modelLower.includes('o1-') || modelLower.includes('o3-')) return 'openai';
   if (modelLower.includes('gemini') || modelLower.includes('google')) return 'gemini';
-  if (modelLower.includes('llama') || modelLower.includes('meta')) return 'llama';
+  if (modelLower.includes('grok') || modelLower.includes('xai')) return 'grok';
+  if (modelLower.includes('llama') || modelLower.includes('meta-llama')) return 'llama';
   if (modelLower.includes('mistral') || modelLower.includes('mixtral')) return 'mistral';
   if (modelLower.includes('perplexity') || modelLower.includes('sonar')) return 'perplexity';
+  if (modelLower.includes('deepseek')) return 'deepseek';
+  if (modelLower.includes('qwen')) return 'qwen';
+  if (modelLower.includes('cohere') || modelLower.includes('command')) return 'cohere';
   return 'other';
 }
 
@@ -120,6 +124,24 @@ export class OpenRouterService {
 
       case 'openai':
         // OpenAI/GPT works well with default settings
+        break;
+
+      case 'grok':
+        // xAI Grok works well with OpenAI-compatible API
+        // Grok supports tool calls natively
+        break;
+
+      case 'deepseek':
+        // DeepSeek works well with default settings
+        // Supports tool calls
+        break;
+
+      case 'qwen':
+        // Alibaba Qwen models work with default settings
+        break;
+
+      case 'cohere':
+        // Cohere Command models work with default settings
         break;
 
       case 'llama':
