@@ -7,7 +7,8 @@
 import { BaseAgent, createBrowserTools, ToolExecutor, AgentContext } from './base-agent';
 import { OpenRouterService } from '../services/openrouter';
 import { PersonaEngine } from '../services/persona-engine';
-import { PersonaProfile, Tool, Activity } from '../shared/types';
+import { getCredentialsStore, CredentialsStore } from '../services/credentials-store';
+import { PersonaProfile, Tool, Activity, StoredCredential } from '../shared/types';
 
 // Perplexity model for discovering URLs based on persona
 const PERPLEXITY_MODEL = 'perplexity/sonar-pro';
@@ -67,6 +68,7 @@ export class AutonomousAgent extends BaseAgent {
   private perplexityModel: string;
   private mainLoopInterval: ReturnType<typeof setInterval> | null = null;
   private tabCleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private credentialsStore: ReturnType<typeof getCredentialsStore>;
 
   constructor(
     llm: OpenRouterService,
@@ -82,6 +84,7 @@ export class AutonomousAgent extends BaseAgent {
     this.personaEngine = personaEngine || null;
     this.perplexityModel = PERPLEXITY_MODEL;
     this.autonomousState = this.createInitialState();
+    this.credentialsStore = getCredentialsStore();
   }
 
   private createInitialState(): AutonomousState {
@@ -106,14 +109,20 @@ export class AutonomousAgent extends BaseAgent {
     const personaInfo = persona ? this.buildPersonaContext(persona) : '';
     const personaEmail = persona?.email?.email || 'the configured email';
 
+    // Get list of sites we have credentials for
+    const knownSites = this.credentialsStore.getAllDomains();
+    const knownSitesInfo = knownSites.length > 0
+      ? `\n\nSITES WITH SAVED CREDENTIALS:\nYou have accounts on: ${knownSites.join(', ')}\nWhen visiting these sites, look for "Sign in" and use the stored credentials.`
+      : '';
+
     return `You are an autonomous web browsing agent simulating authentic human behavior.
 
-${personaInfo}
+${personaInfo}${knownSitesInfo}
 
 Your goal is to browse the web naturally like a real person. Explore pages, click on interesting content, scroll, read, and interact.
 
 POPUP & MODAL HANDLING (ALWAYS DO THIS FIRST):
-- Dismiss cookie banners by clicking "Accept", "OK", "I agree"
+- ALWAYS accept cookies - click "Accept", "Accept all", "OK", "I agree", "Allow all"
 - Close newsletter popups with "X", "No thanks", "Close"
 - Dismiss app download prompts with "Continue in browser"
 - For login popups: click "X" or "Continue as guest" to dismiss
@@ -123,6 +132,12 @@ CRITICAL - LOGIN RULES:
 - If signing up for a service, ONLY use email signup with: ${personaEmail}
 - Always prefer "Sign up with email" or "Create account" over social logins
 - If forced to choose, look for "Other options", "Use email instead", or close the popup
+- After successfully signing up for ANY service, ALWAYS use the save_credentials tool to store your login info
+
+CREDENTIAL MANAGEMENT:
+- When you sign up for a new site, use save_credentials to store the email and password
+- When visiting a site you've signed up for before, look for "Sign in" and log in
+- Use get_stored_credentials to retrieve your login info for a site
 
 BROWSING BEHAVIOR:
 - Stay on the current page and explore it thoroughly before moving on
@@ -140,6 +155,8 @@ TOOLS:
 - type_text: Fill forms (use persona's email for signups)
 - wait: Pause to read (5-15 seconds)
 - navigate_to: Only for going to a completely different website
+- save_credentials: Save login credentials after signing up for a site
+- get_stored_credentials: Get stored credentials for a site you've signed up for
 
 After several interactions on a page, use complete to summarize.`;
   }
@@ -225,6 +242,48 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
             required: ['action', 'element_index']
           }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'save_credentials',
+          description: 'Save login credentials after signing up for a website. ALWAYS call this after successfully creating an account on any site.',
+          parameters: {
+            type: 'object',
+            properties: {
+              email: {
+                type: 'string',
+                description: 'Email address used for signup'
+              },
+              password: {
+                type: 'string',
+                description: 'Password used for signup'
+              },
+              username: {
+                type: 'string',
+                description: 'Username if different from email (optional)'
+              }
+            },
+            required: ['email', 'password']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_stored_credentials',
+          description: 'Get stored login credentials for a website you have previously signed up for',
+          parameters: {
+            type: 'object',
+            properties: {
+              domain: {
+                type: 'string',
+                description: 'Domain of the website (e.g., "reddit.com")'
+              }
+            },
+            required: ['domain']
+          }
+        }
       }
     ];
   }
@@ -262,6 +321,65 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
 
       case 'check_email':
         return this.handleCheckEmail();
+
+      case 'save_credentials': {
+        try {
+          // Get current URL from context or page info
+          let currentUrl = this.context?.url || '';
+          if (!currentUrl) {
+            try {
+              const pageInfo = await this.executeTool('get_page_info', {});
+              currentUrl = pageInfo?.url || '';
+            } catch (e) {
+              // Fallback
+            }
+          }
+
+          if (!currentUrl) {
+            return 'Could not determine current URL to save credentials';
+          }
+
+          await this.credentialsStore.initialize();
+          const credential = await this.credentialsStore.store({
+            url: currentUrl,
+            email: args.email,
+            password: args.password,
+            username: args.username
+          });
+
+          this.logActivity({
+            type: 'form_submit',
+            details: {
+              action: 'save_credentials',
+              domain: credential.domain,
+              email: args.email
+            }
+          });
+
+          return `Credentials saved for ${credential.domain}. You can now log in to this site in future sessions.`;
+        } catch (error) {
+          console.error('Failed to save credentials:', error);
+          return `Failed to save credentials: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+
+      case 'get_stored_credentials': {
+        try {
+          await this.credentialsStore.initialize();
+          const credential = this.credentialsStore.getByDomain(args.domain);
+
+          if (credential) {
+            // Update last login time
+            await this.credentialsStore.updateLastLogin(args.domain);
+            return `Found credentials for ${args.domain}:\nEmail: ${credential.email}\nPassword: ${credential.password}${credential.username ? `\nUsername: ${credential.username}` : ''}`;
+          } else {
+            return `No stored credentials found for ${args.domain}. You may need to sign up first.`;
+          }
+        } catch (error) {
+          console.error('Failed to get credentials:', error);
+          return `Failed to get credentials: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
 
       default:
         const response = await this.executeTool(name, args);
@@ -470,13 +588,23 @@ Look for an input field for the verification code and:
 
   // Discover starting URLs based on persona using Perplexity
   async discoverStartingUrls(): Promise<string[]> {
+    // Always initialize credentials store
+    await this.credentialsStore.initialize();
+
     const persona = this.personaEngine?.getPersona();
+
+    // Get URLs from sites we have accounts on (prioritize these!)
+    const credentialUrls = this.credentialsStore.getAllUrls();
+
     if (!persona) {
-      return [
+      // Even without persona, include signed-up sites
+      const defaultUrls = [
         'https://www.google.com',
         'https://www.reddit.com',
         'https://www.youtube.com'
       ];
+      // Put credential URLs first since user revisits signed-up sites more often
+      return [...new Set([...credentialUrls, ...defaultUrls])];
     }
 
     const query = this.buildDiscoveryQuery(persona);
@@ -484,7 +612,7 @@ Look for an input field for the verification code and:
     try {
       this.logActivity({
         type: 'page_visit',
-        details: { phase: 'discovering', query }
+        details: { phase: 'discovering', query, signedUpSites: credentialUrls.length }
       });
 
       const searchResult = await this.llm.searchWithPerplexity(query, this.perplexityModel);
@@ -498,15 +626,27 @@ Look for an input field for the verification code and:
         .filter(p => p.usage !== 'occasional')
         .map(p => this.getSocialMediaUrl(p.name));
 
-      const allUrls = [...new Set([...urls, ...favoriteSites, ...socialUrls])];
+      // Combine all URLs with credential URLs FIRST (since people revisit signed-up sites more often)
+      // Then shuffle them a bit to make browsing feel natural
+      const discoveredUrls = [...new Set([...urls, ...favoriteSites, ...socialUrls])];
+
+      // Weight credential URLs higher by including them at the start
+      const allUrls = [...new Set([...credentialUrls, ...discoveredUrls])];
       this.autonomousState.discoveredUrls = allUrls;
 
-      return allUrls.slice(0, 10);
+      // Log how many signed-up sites we're including
+      if (credentialUrls.length > 0) {
+        console.log(`Including ${credentialUrls.length} sites with stored credentials in browsing pool`);
+      }
+
+      return allUrls.slice(0, 15); // Return more URLs now that we have credential sites
     } catch (error) {
       console.error('Error discovering URLs:', error);
-      return persona.browsingHabits.favoriteSites.slice(0, 5)
+      // Fallback: include credential URLs with favorite sites
+      const fallbackUrls = persona.browsingHabits.favoriteSites.slice(0, 5)
         .map(site => this.normalizeUrl(site))
         .filter(url => url !== null) as string[];
+      return [...new Set([...credentialUrls, ...fallbackUrls])];
     }
   }
 

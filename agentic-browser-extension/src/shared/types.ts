@@ -298,8 +298,24 @@ export const STORAGE_KEYS = {
   PERSONA: 'agentic_persona',
   ACTIVITIES: 'agentic_activities',
   AGENT_STATE: 'agentic_agent_state',
-  SESSION: 'agentic_session'
+  SESSION: 'agentic_session',
+  CREDENTIALS: 'agentic_credentials'
 } as const;
+
+// Stored website credentials
+export interface StoredCredential {
+  id: string;
+  url: string;           // Full URL of the site
+  domain: string;        // Domain extracted from URL
+  siteName: string;      // Human-readable site name
+  email: string;         // Email used for signup
+  password: string;      // Password used
+  username?: string;     // Optional username if different from email
+  createdAt: number;     // When the account was created
+  lastLoginAt?: number;  // Last successful login
+  loginUrl?: string;     // Specific login page URL if known
+  notes?: string;        // Any notes about the account
+}
 
 // Default Models
 export const DEFAULT_MODELS = {
