@@ -286,10 +286,9 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
       const urls = this.extractUrlsFromText(searchResult);
 
       // Add persona's favorite sites
-      const favoriteSites = persona.browsingHabits.favoriteSites.map(site => {
-        if (site.startsWith('http')) return site;
-        return `https://www.${site.toLowerCase().replace(/\s+/g, '')}.com`;
-      });
+      const favoriteSites = persona.browsingHabits.favoriteSites
+        .map(site => this.normalizeUrl(site))
+        .filter(url => url !== null) as string[];
 
       // Add social media platforms
       const socialUrls = persona.socialMedia.platforms
@@ -303,10 +302,84 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
     } catch (error) {
       console.error('Error discovering URLs:', error);
       // Fallback to persona favorites
-      return persona.browsingHabits.favoriteSites.slice(0, 5).map(site =>
-        site.startsWith('http') ? site : `https://www.${site.toLowerCase()}.com`
-      );
+      return persona.browsingHabits.favoriteSites.slice(0, 5)
+        .map(site => this.normalizeUrl(site))
+        .filter(url => url !== null) as string[];
     }
+  }
+
+  // Normalize a site name or URL to a proper URL
+  private normalizeUrl(site: string): string | null {
+    if (!site) return null;
+
+    const siteLower = site.toLowerCase().trim();
+
+    // Already a full URL
+    if (siteLower.startsWith('http://') || siteLower.startsWith('https://')) {
+      return site;
+    }
+
+    // Check if it's a known site name and map to proper URL
+    const knownSites: Record<string, string> = {
+      'google': 'https://www.google.com',
+      'youtube': 'https://www.youtube.com',
+      'reddit': 'https://www.reddit.com',
+      'twitter': 'https://twitter.com',
+      'x': 'https://twitter.com',
+      'facebook': 'https://www.facebook.com',
+      'instagram': 'https://www.instagram.com',
+      'tiktok': 'https://www.tiktok.com',
+      'amazon': 'https://www.amazon.com',
+      'netflix': 'https://www.netflix.com',
+      'spotify': 'https://www.spotify.com',
+      'discord': 'https://discord.com',
+      'twitch': 'https://www.twitch.tv',
+      'linkedin': 'https://www.linkedin.com',
+      'pinterest': 'https://www.pinterest.com',
+      'snapchat': 'https://www.snapchat.com',
+      'whatsapp': 'https://web.whatsapp.com',
+      'telegram': 'https://web.telegram.org',
+      'github': 'https://github.com',
+      'stackoverflow': 'https://stackoverflow.com',
+      'medium': 'https://medium.com',
+      'quora': 'https://www.quora.com',
+      'ebay': 'https://www.ebay.com',
+      'walmart': 'https://www.walmart.com',
+      'target': 'https://www.target.com',
+      'bestbuy': 'https://www.bestbuy.com',
+      'etsy': 'https://www.etsy.com',
+      'hulu': 'https://www.hulu.com',
+      'disneyplus': 'https://www.disneyplus.com',
+      'disney+': 'https://www.disneyplus.com',
+      'hbomax': 'https://www.max.com',
+      'hbo max': 'https://www.max.com',
+      'cnn': 'https://www.cnn.com',
+      'bbc': 'https://www.bbc.com',
+      'nytimes': 'https://www.nytimes.com',
+      'wikipedia': 'https://www.wikipedia.org',
+    };
+
+    // Remove common suffixes to check against known sites
+    const siteWithoutSuffix = siteLower
+      .replace(/\.com$/, '')
+      .replace(/\.org$/, '')
+      .replace(/\.net$/, '')
+      .replace(/\.tv$/, '')
+      .replace(/\s+/g, '');
+
+    if (knownSites[siteWithoutSuffix]) {
+      return knownSites[siteWithoutSuffix];
+    }
+
+    // If it already has a domain extension, just add https://
+    if (/\.(com|org|net|io|co|tv|edu|gov)$/i.test(siteLower)) {
+      // Don't add www. if it might break (like discord.com)
+      return `https://${siteLower}`;
+    }
+
+    // Default: add https://www. and .com
+    const cleanSite = siteLower.replace(/\s+/g, '');
+    return `https://www.${cleanSite}.com`;
   }
 
   private buildDiscoveryQuery(persona: PersonaProfile): string {
@@ -337,9 +410,29 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
       'Pinterest': 'https://www.pinterest.com',
       'Snapchat': 'https://www.snapchat.com',
       'Discord': 'https://discord.com',
-      'Twitch': 'https://www.twitch.tv'
+      'Twitch': 'https://www.twitch.tv',
+      'BeReal': 'https://bfrnd.com',
+      'Threads': 'https://www.threads.net',
+      'WhatsApp': 'https://web.whatsapp.com',
+      'Telegram': 'https://web.telegram.org',
+      'Mastodon': 'https://mastodon.social',
     };
-    return urls[platform] || `https://www.${platform.toLowerCase()}.com`;
+
+    // Check exact match first
+    if (urls[platform]) {
+      return urls[platform];
+    }
+
+    // Check case-insensitive match
+    const platformLower = platform.toLowerCase();
+    for (const [key, url] of Object.entries(urls)) {
+      if (key.toLowerCase() === platformLower) {
+        return url;
+      }
+    }
+
+    // Use normalizeUrl for unknown platforms
+    return this.normalizeUrl(platform) || `https://www.${platformLower.replace(/\s+/g, '')}.com`;
   }
 
   // Check page content for email verification prompts
