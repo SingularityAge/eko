@@ -201,7 +201,6 @@ export class AutonomousBrowserAgent {
 
     this.llm.setApiKey(settings.openRouterApiKey);
     this.model = settings.model || 'anthropic/claude-sonnet-4';
-    this.persona = settings.persona;
     this.running = true;
     this.visitedUrls.clear();
     this.useVisionMode = false;
@@ -209,13 +208,22 @@ export class AutonomousBrowserAgent {
 
     this.updateState({ status: 'running', currentAction: 'Initializing...', totalActions: 0, errors: 0 });
 
+    // Generate persona if none exists
+    if (!settings.persona) {
+      this.updateState({ currentAction: 'Generating browsing persona...' });
+      await this.generatePersona();
+    } else {
+      this.persona = settings.persona;
+      console.log('[AGENT] Using existing persona:', this.persona.name);
+    }
+
     // Get or create a tab and ensure focus
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       this.tabId = activeTab?.id || null;
 
-      if (!this.tabId) {
-        const newTab = await chrome.tabs.create({ url: 'https://www.bing.com', active: true });
+      if (!this.tabId || activeTab?.url?.startsWith('chrome://')) {
+        const newTab = await chrome.tabs.create({ url: 'about:blank', active: true });
         this.tabId = newTab.id || null;
       }
 
@@ -227,10 +235,78 @@ export class AutonomousBrowserAgent {
       console.warn('[AGENT] Tab setup error:', e);
     }
 
-    this.updateState({ currentAction: 'Discovering interesting URLs...' });
+    // Research phase: discover URLs matching persona interests
+    this.updateState({ currentAction: 'Researching URLs based on persona interests...' });
     await this.discoverUrls();
 
+    // Start browsing
+    console.log('[AGENT] Starting browsing loop with', this.urlQueue.length, 'URLs');
     await this.browsingLoop();
+  }
+
+  // Generate a random persona for browsing
+  private async generatePersona(): Promise<void> {
+    console.log('[AGENT] Generating persona...');
+
+    try {
+      const response = await this.llm.chat([
+        {
+          role: 'system',
+          content: 'Generate a realistic persona for web browsing. Return ONLY valid JSON, no markdown.'
+        },
+        {
+          role: 'user',
+          content: `Create a random persona with the following JSON structure:
+{
+  "name": "First name",
+  "age": number between 22-55,
+  "location": "City, Country",
+  "occupation": "job title",
+  "interests": ["interest1", "interest2", "interest3", "interest4", "interest5"],
+  "email": null,
+  "favoriteSites": ["example.com", "another.com"]
+}
+
+Make the interests specific and varied (e.g., "vintage synthesizers", "rock climbing", "Japanese cinema", "home automation", "vegan cooking").
+Make favoriteSites relevant to the interests (without https://).
+Return ONLY the JSON object, nothing else.`
+        }
+      ], this.model, undefined, 0.9);
+
+      const content = response.content || '';
+      // Extract JSON from response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const personaData = JSON.parse(jsonMatch[0]);
+        this.persona = {
+          name: personaData.name || 'Alex',
+          age: personaData.age || 30,
+          location: personaData.location || 'New York, USA',
+          occupation: personaData.occupation || 'Software Developer',
+          interests: personaData.interests || ['technology', 'music', 'travel'],
+          email: personaData.email || null,
+          favoriteSites: personaData.favoriteSites || []
+        };
+
+        console.log('[AGENT] Generated persona:', this.persona.name, '-', this.persona.interests.join(', '));
+
+        // Save persona to settings
+        const { saveSettings } = await import('./storage');
+        await saveSettings({ persona: this.persona });
+      }
+    } catch (e) {
+      console.error('[AGENT] Persona generation failed:', e);
+      // Use default persona
+      this.persona = {
+        name: 'Alex',
+        age: 32,
+        location: 'San Francisco, USA',
+        occupation: 'Marketing Manager',
+        interests: ['technology', 'travel', 'photography', 'cooking', 'fitness'],
+        email: null,
+        favoriteSites: ['reddit.com', 'medium.com', 'youtube.com']
+      };
+    }
   }
 
   stop(): void {
@@ -280,17 +356,17 @@ export class AutonomousBrowserAgent {
   }
 
   private async discoverUrls(): Promise<void> {
-    console.log('[AGENT] Discovering URLs...');
+    console.log('[AGENT] ========================================');
+    console.log('[AGENT] URL Discovery Phase (Perplexity Research)');
+    console.log('[AGENT] ========================================');
 
     const credentials = await getCredentials();
     const credentialUrls = credentials.map(c => c.url);
 
     const defaultUrls = [
-      'https://www.bing.com',
       'https://www.reddit.com',
       'https://www.youtube.com',
-      'https://news.ycombinator.com',
-      'https://www.wikipedia.org'
+      'https://news.ycombinator.com'
     ];
 
     let personaUrls: string[] = [];
@@ -300,36 +376,84 @@ export class AutonomousBrowserAgent {
       );
     }
 
+    let discoveredUrls: string[] = [];
+
     if (this.persona) {
-      try {
-        const query = `Find popular websites for someone interested in: ${this.persona.interests.join(', ')}. List 5-10 relevant website URLs.`;
-        const result = await this.llm.searchWithPerplexity(query);
+      console.log('[AGENT] Persona:', this.persona.name);
+      console.log('[AGENT] Interests:', this.persona.interests.join(', '));
+      console.log('[AGENT] Location:', this.persona.location);
 
-        const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
-        const matches = result.match(urlRegex) || [];
-        const discovered = matches.filter(url => {
-          try { new URL(url); return true; } catch { return false; }
-        });
+      // Search for URLs based on each interest
+      for (const interest of this.persona.interests.slice(0, 3)) {
+        this.updateState({ currentAction: `Researching: ${interest}...` });
 
-        console.log('[AGENT] Perplexity found:', discovered.length, 'URLs');
-        this.urlQueue = [...new Set([...credentialUrls, ...discovered, ...personaUrls, ...defaultUrls])];
-      } catch (e) {
-        console.warn('[AGENT] Perplexity search failed:', e);
-        this.urlQueue = [...new Set([...credentialUrls, ...personaUrls, ...defaultUrls])];
+        try {
+          const query = `Best websites and online communities for ${interest} enthusiasts in ${this.persona.location}. List specific website URLs with https://.`;
+          console.log('[AGENT] Perplexity query:', query);
+
+          const result = await this.llm.searchWithPerplexity(query);
+          console.log('[AGENT] Perplexity response length:', result.length);
+
+          // Extract URLs from response
+          const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]()]+/gi;
+          const matches = result.match(urlRegex) || [];
+          const validUrls = matches
+            .map(url => url.replace(/[.,;:!?]+$/, '')) // Remove trailing punctuation
+            .filter(url => {
+              try {
+                const u = new URL(url);
+                // Skip search engine results pages and invalid URLs
+                return !u.hostname.includes('google.') &&
+                       !u.hostname.includes('bing.') &&
+                       !u.pathname.includes('/search');
+              } catch {
+                return false;
+              }
+            });
+
+          console.log('[AGENT] Found', validUrls.length, 'URLs for', interest);
+          discoveredUrls.push(...validUrls);
+
+          // Small delay between searches
+          await this.sleep(500);
+        } catch (e) {
+          console.warn('[AGENT] Perplexity search failed for', interest, ':', e);
+        }
       }
-    } else {
-      this.urlQueue = [...new Set([...credentialUrls, ...personaUrls, ...defaultUrls])];
     }
 
-    console.log('[AGENT] URL queue:', this.urlQueue.length, 'URLs');
+    // Combine all URLs, remove duplicates, prioritize discovered ones
+    const allUrls = [...new Set([
+      ...discoveredUrls,
+      ...credentialUrls,
+      ...personaUrls,
+      ...defaultUrls
+    ])];
+
+    this.urlQueue = allUrls;
+    console.log('[AGENT] ========================================');
+    console.log('[AGENT] URL Queue ready:', this.urlQueue.length, 'URLs');
+    console.log('[AGENT] First 5:', this.urlQueue.slice(0, 5).join(', '));
+    console.log('[AGENT] ========================================');
   }
 
   private async browsingLoop(): Promise<void> {
+    console.log('[AGENT] ========================================');
     console.log('[AGENT] Starting browsing loop');
+    console.log('[AGENT] ========================================');
+
     let consecutiveErrors = 0;
+    let loopIteration = 0;
+
+    // Navigate to first URL immediately
+    await this.navigateToNextUrl();
 
     while (this.running) {
+      loopIteration++;
+      console.log('[AGENT] --- Loop iteration', loopIteration, '---');
+
       if (this.state.status === 'paused') {
+        console.log('[AGENT] Paused, waiting...');
         await this.sleep(1000);
         continue;
       }
@@ -338,25 +462,36 @@ export class AutonomousBrowserAgent {
         // Ensure focus on our tab
         await this.focusTab();
 
-        // Navigate to next URL if needed
-        if (!this.state.currentUrl || Math.random() < 0.15) {
-          await this.navigateToNextUrl();
-          this.useVisionMode = false;
-          this.consecutiveFailures = 0;
-          this.sameStateCount = 0;
-        }
+        // Wait for page to load
+        await this.sleep(1500);
 
         // Get page state
+        console.log('[AGENT] Getting page state for tab', this.tabId);
         const pageState = await this.getPageState();
+
         if (!pageState) {
+          console.warn('[AGENT] No page state returned, waiting...');
+          consecutiveErrors++;
+          if (consecutiveErrors >= 5) {
+            console.log('[AGENT] Too many page state failures, navigating to next URL');
+            await this.navigateToNextUrl();
+            consecutiveErrors = 0;
+          }
           await this.sleep(2000);
           continue;
         }
+
+        console.log('[AGENT] Page:', pageState.url);
+        console.log('[AGENT] Title:', pageState.title);
+        console.log('[AGENT] Elements:', pageState.elements.split('\n').length, 'interactive elements');
+
+        this.updateState({ currentUrl: pageState.url });
 
         // Check for stuck state (same page state 3+ times)
         const stateHash = `${pageState.url}:${pageState.elements.slice(0, 500)}`;
         if (stateHash === this.lastPageState) {
           this.sameStateCount++;
+          console.log('[AGENT] Same state count:', this.sameStateCount);
           if (this.sameStateCount >= 3) {
             console.log('[AGENT] Stuck state detected, switching to vision mode');
             this.useVisionMode = true;
@@ -384,22 +519,27 @@ export class AutonomousBrowserAgent {
 
         // Get LLM decision
         this.updateState({ currentAction: this.useVisionMode ? 'Analyzing with vision...' : 'Thinking...' });
+        console.log('[AGENT] Calling LLM for next action...');
+
         const action = await this.getNextAction(task, pageState, screenshot);
+        console.log('[AGENT] LLM suggested action:', action?.name, action?.args);
 
         if (action) {
           this.updateState({ currentAction: `Executing: ${action.name}` });
           const result = await this.executeAction(action.name, action.args);
+          console.log('[AGENT] Action result:', result.slice(0, 100));
 
           // Check if action succeeded
           if (result.includes('Error')) {
             this.consecutiveFailures++;
+            console.log('[AGENT] Consecutive failures:', this.consecutiveFailures);
             if (this.consecutiveFailures >= 3 && !this.useVisionMode) {
               console.log('[AGENT] 3 consecutive failures, switching to vision mode');
               this.useVisionMode = true;
             }
           } else {
             this.consecutiveFailures = 0;
-            if (this.useVisionMode && this.consecutiveFailures === 0) {
+            if (this.useVisionMode) {
               // Vision mode succeeded, can try DOM mode again next time
               this.useVisionMode = false;
             }
@@ -413,10 +553,24 @@ export class AutonomousBrowserAgent {
 
           this.updateState({ totalActions: this.state.totalActions + 1 });
           consecutiveErrors = 0;
+        } else {
+          console.log('[AGENT] No action from LLM, scrolling down');
+          await this.executeAction('scroll', { direction: 'down', amount: 300 });
+        }
+
+        // Random chance to navigate to next URL (keeps browsing fresh)
+        if (loopIteration > 10 && Math.random() < 0.1) {
+          console.log('[AGENT] Random navigation to next URL');
+          await this.navigateToNextUrl();
+          this.useVisionMode = false;
+          this.consecutiveFailures = 0;
+          this.sameStateCount = 0;
         }
 
         // Human-like pause
-        await this.sleep(1000 + Math.random() * 2000);
+        const pauseMs = 1000 + Math.random() * 2000;
+        console.log('[AGENT] Pausing for', Math.round(pauseMs), 'ms');
+        await this.sleep(pauseMs);
 
       } catch (error) {
         console.error('[AGENT] Loop error:', error);

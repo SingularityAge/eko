@@ -95,6 +95,14 @@ interface OpenRouterModel {
   name: string;
 }
 
+interface Persona {
+  name: string;
+  age: number;
+  location: string;
+  occupation: string;
+  interests: string[];
+}
+
 function Sidebar() {
   const [state, setState] = useState<BrowserState>({
     status: 'idle',
@@ -106,6 +114,7 @@ function Sidebar() {
   const [hasApiKey, setHasApiKey] = useState(false);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [persona, setPersona] = useState<Persona | null>(null);
 
   // Settings state
   const [apiKey, setApiKey] = useState('');
@@ -143,6 +152,9 @@ function Sidebar() {
       if (response) {
         setApiKey(response.openRouterApiKey || '');
         setSelectedModel(response.model || 'anthropic/claude-sonnet-4');
+        if (response.persona) {
+          setPersona(response.persona);
+        }
       }
     } catch (e) {
       console.error('Failed to load settings:', e);
@@ -317,6 +329,21 @@ function Sidebar() {
           </div>
         )}
 
+        {persona && (
+          <div className="url-box" style={{ background: '#f0f7ff', borderColor: '#cce5ff' }}>
+            <div className="current-action-label">Browsing Persona</div>
+            <div style={{ fontSize: '13px', marginBottom: '4px' }}>
+              <strong>{persona.name}</strong>, {persona.age} - {persona.occupation}
+            </div>
+            <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>
+              {persona.location}
+            </div>
+            <div style={{ fontSize: '11px', color: '#888' }}>
+              Interests: {persona.interests.join(', ')}
+            </div>
+          </div>
+        )}
+
         <div className="section-title">Recent Activity</div>
         <div className="activities">
           {activities.length === 0 ? (
@@ -353,7 +380,11 @@ function Sidebar() {
 
             <div className="form-group">
               <label>Model (Multimodal Only)</label>
-              {loadingModels ? (
+              {!apiKey ? (
+                <select disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                  <option>Enter API key first...</option>
+                </select>
+              ) : loadingModels ? (
                 <div style={{ padding: '10px', color: '#666' }}>Loading models...</div>
               ) : models.length > 0 ? (
                 <select value={selectedModel} onChange={e => handleModelChange(e.target.value)}>
@@ -366,11 +397,8 @@ function Sidebar() {
                   ))}
                 </select>
               ) : (
-                <select value={selectedModel} onChange={e => handleModelChange(e.target.value)}>
-                  <option value="anthropic/claude-sonnet-4">Claude Sonnet 4</option>
-                  <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                  <option value="openai/gpt-4o">GPT-4o</option>
-                  <option value="google/gemini-pro-1.5">Gemini Pro 1.5</option>
+                <select disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                  <option>No models loaded. Check API key.</option>
                 </select>
               )}
               {modelConfirm && (
