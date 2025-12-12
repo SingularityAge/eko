@@ -398,14 +398,16 @@ Return ONLY the JSON object, nothing else.`
           const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]()]+/gi;
           const matches = result.match(urlRegex) || [];
           const validUrls = matches
-            .map(url => url.replace(/[.,;:!?]+$/, '')) // Remove trailing punctuation
+            .map(url => url.replace(/[.,;:!?*#@'"\]\[]+$/, '')) // Remove trailing punctuation and special chars
+            .map(url => url.replace(/[*#@'"]+/g, '')) // Remove invalid URL characters anywhere
             .filter(url => {
               try {
                 const u = new URL(url);
                 // Skip search engine results pages and invalid URLs
                 return !u.hostname.includes('google.') &&
                        !u.hostname.includes('bing.') &&
-                       !u.pathname.includes('/search');
+                       !u.pathname.includes('/search') &&
+                       u.hostname.length > 3; // Basic sanity check
               } catch {
                 return false;
               }
@@ -656,16 +658,44 @@ Return ONLY the JSON object, nothing else.`
       task += `You have an account on this site:\n- Email: ${credential.email}\n- Password: ${credential.password}\nIf you see a login form, log in with these credentials.\n\n`;
     }
 
+    // Check for Google/social login indicators in elements
+    const elementsLower = pageState.elements.toLowerCase();
+    const hasGooglePopup = elementsLower.includes('sign in with google') ||
+                           elementsLower.includes('continue with google') ||
+                           elementsLower.includes('log in with google') ||
+                           elementsLower.includes('accounts.google.com') ||
+                           elementsLower.includes('signin/oauth') ||
+                           elementsLower.includes('one tap') ||
+                           elementsLower.includes('g_id_onload');
+
+    const hasSocialLogin = hasGooglePopup ||
+                           elementsLower.includes('sign in with apple') ||
+                           elementsLower.includes('continue with apple') ||
+                           elementsLower.includes('sign in with facebook') ||
+                           elementsLower.includes('continue with facebook');
+
     task += `Interactive elements on page:\n${pageState.elements.slice(0, 8000)}\n\n`;
+
+    if (hasSocialLogin) {
+      task += `**IMPORTANT: Social login popup detected!**
+- A Google/Apple/Facebook login overlay is visible on this page
+- You MUST close it immediately using press_escape or clicking the X/close button
+- Look for elements containing "close", "×", "X", "dismiss", "no thanks", "not now"
+- NEVER click "Sign in with Google/Apple/Facebook" buttons
+- After closing, continue with email/password login if available
+
+`;
+    }
 
     task += `Instructions:
 - Browse naturally like a human - read content, scroll, click interesting links
 - If you see cookie consent popup, ALWAYS click Accept/Allow/OK to accept cookies
-- If you see a Google/Apple/Facebook login popup/overlay, use press_escape to close it, then find email/password login
+- If you see a Google/Apple/Facebook login popup/overlay, IMMEDIATELY close it:
+  1. First try press_escape
+  2. If that doesn't work, look for X/close/dismiss buttons and click them
+  3. NEVER click social login buttons
 - If you see a paywall blocking content, use the 'done' tool to move on
-- NEVER use "Sign in with Google/Apple/Facebook" - always use email/password
 - Search using Bing only (not Google)
-- Use press_escape to close unwanted popups or overlays
 - Use the 'done' tool when you want to move to a different site
 
 What single action should you take next?`;

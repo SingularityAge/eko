@@ -12,10 +12,55 @@ interface DOMElement {
   rect: { x: number; y: number; width: number; height: number };
 }
 
+// Detect Google One Tap and social login overlays
+function detectSocialLoginOverlays(): string[] {
+  const overlays: string[] = [];
+
+  // Google One Tap iframe
+  const googleOneTap = document.querySelector('iframe[src*="accounts.google.com"]') ||
+                       document.querySelector('#credential_picker_container') ||
+                       document.querySelector('[id*="g_id_"]') ||
+                       document.querySelector('.g_id_signin');
+  if (googleOneTap) {
+    overlays.push('[OVERLAY] Google One Tap login popup detected - use press_escape to close');
+  }
+
+  // Generic social login modals
+  const socialModals = document.querySelectorAll('[class*="modal"], [class*="overlay"], [class*="popup"], [role="dialog"]');
+  socialModals.forEach(modal => {
+    const text = (modal as HTMLElement).innerText?.toLowerCase() || '';
+    if (text.includes('sign in with google') || text.includes('continue with google') ||
+        text.includes('sign in with apple') || text.includes('sign in with facebook')) {
+      overlays.push('[OVERLAY] Social login modal detected - close it with X button or press_escape');
+    }
+  });
+
+  // Cookie consent popups
+  const cookieSelectors = ['[class*="cookie"]', '[class*="consent"]', '[id*="cookie"]', '[id*="consent"]', '[class*="gdpr"]'];
+  cookieSelectors.forEach(sel => {
+    const el = document.querySelector(sel);
+    if (el && (el as HTMLElement).offsetHeight > 50) {
+      const text = (el as HTMLElement).innerText?.toLowerCase() || '';
+      if (text.includes('cookie') || text.includes('accept')) {
+        overlays.push('[OVERLAY] Cookie consent popup - click Accept/Allow to dismiss');
+      }
+    }
+  });
+
+  return overlays;
+}
+
 // Build DOM tree of interactive elements
 function buildDOMTree(): { elements: DOMElement[]; domString: string } {
   const elements: DOMElement[] = [];
   const lines: string[] = [];
+
+  // First, detect overlays
+  const overlays = detectSocialLoginOverlays();
+  overlays.forEach(o => lines.push(o));
+  if (overlays.length > 0) {
+    lines.push('---');
+  }
 
   const interactiveSelectors = [
     'a[href]',
