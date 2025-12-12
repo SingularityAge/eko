@@ -289,6 +289,32 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
             required: ['domain']
           }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'take_screenshot',
+          description: 'Take a screenshot of the current page for visual analysis. Use this when DOM-based interaction is failing to understand what you are looking at.',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'click_at_position',
+          description: 'Click at specific x,y coordinates on the page. Use this as fallback when element indexes are not working.',
+          parameters: {
+            type: 'object',
+            properties: {
+              x: { type: 'number', description: 'X coordinate (pixels from left)' },
+              y: { type: 'number', description: 'Y coordinate (pixels from top)' }
+            },
+            required: ['x', 'y']
+          }
+        }
       }
     ];
   }
@@ -386,11 +412,37 @@ Engagement Style: ${persona.socialMedia.engagementStyle}`;
         }
       }
 
+      case 'take_screenshot': {
+        try {
+          const screenshot = await this.executeTool('take_screenshot', {});
+          // Store screenshot for potential vision analysis
+          this.lastScreenshot = screenshot;
+          return `Screenshot captured successfully. The image shows the current state of the page. Use this to identify elements visually if DOM interaction is failing.`;
+        } catch (error) {
+          console.error('Failed to take screenshot:', error);
+          return `Failed to take screenshot: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+
+      case 'click_at_position': {
+        try {
+          // Use content script to click at coordinates
+          const result = await this.executeTool('click_at_position', { x: args.x, y: args.y });
+          return result?.result || `Clicked at position (${args.x}, ${args.y})`;
+        } catch (error) {
+          console.error('Failed to click at position:', error);
+          return `Failed to click at position: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+
       default:
         const response = await this.executeTool(name, args);
         return response?.result || JSON.stringify(response);
     }
   }
+
+  // Store last screenshot for vision fallback
+  private lastScreenshot: string | null = null;
 
   private async handleCheckEmail(): Promise<string> {
     const persona = this.personaEngine?.getPersona();
@@ -854,7 +906,8 @@ Look for an input field for the verification code and:
     let urlIndex = 0;
     let interactionsOnCurrentPage = 0;
     let consecutiveErrors = 0;
-    const maxConsecutiveErrors = 5; // More tolerance for errors
+    let totalErrorsOnPage = 0;
+    let recoveryStrategy: 'normal' | 'alternative' | 'radical' | 'moveOn' = 'normal';
     const minInteractionsPerPage = 5;
     const maxInteractionsPerPage = 12;
     let targetInteractions = minInteractionsPerPage + Math.floor(Math.random() * (maxInteractionsPerPage - minInteractionsPerPage));
@@ -862,6 +915,7 @@ Look for an input field for the verification code and:
     let totalInteractions = 0;
     let lastSearchTime = 0;
     let lastEmailCheckTime = 0;
+    let pageInsights: string[] = []; // Collect insights even from failed interactions
     const searchInterval = 10 * 60 * 1000; // Do a search every ~10 minutes
     const emailCheckInterval = 15 * 60 * 1000; // Check email every ~15 minutes
 
@@ -914,7 +968,9 @@ Look for an input field for the verification code and:
             await this.doBingSearch(onUpdate);
             currentPageUrl = 'https://www.bing.com';
             interactionsOnCurrentPage = 0;
-            targetInteractions = 3 + Math.floor(Math.random() * 4); // Fewer interactions after search
+            totalErrorsOnPage = 0;
+            recoveryStrategy = 'normal';
+            targetInteractions = 3 + Math.floor(Math.random() * 4);
             continue;
           } catch (e) {
             console.warn('Bing search failed:', e);
@@ -928,13 +984,43 @@ Look for an input field for the verification code and:
           console.warn('Tab cleanup failed:', e);
         }
 
-        // Navigate to a new URL if needed
+        // Determine recovery strategy based on error count
+        if (totalErrorsOnPage >= 10) {
+          recoveryStrategy = 'moveOn';
+        } else if (totalErrorsOnPage >= 7) {
+          recoveryStrategy = 'radical';
+        } else if (totalErrorsOnPage >= 3) {
+          recoveryStrategy = 'alternative';
+        } else {
+          recoveryStrategy = 'normal';
+        }
+
+        // Navigate to a new URL if needed OR if we're in moveOn strategy
         const shouldNavigate =
           !currentPageUrl ||
           interactionsOnCurrentPage >= targetInteractions ||
-          consecutiveErrors >= maxConsecutiveErrors;
+          recoveryStrategy === 'moveOn';
 
         if (shouldNavigate) {
+          // Log insights from the page we're leaving (even if problematic)
+          if (currentPageUrl && pageInsights.length > 0) {
+            this.logActivity({
+              type: 'page_visit',
+              url: currentPageUrl,
+              details: {
+                interactions: interactionsOnCurrentPage,
+                errors: totalErrorsOnPage,
+                insights: pageInsights.slice(-5),
+                strategy: recoveryStrategy
+              }
+            });
+          }
+
+          // Reset page-level counters
+          pageInsights = [];
+          totalErrorsOnPage = 0;
+          recoveryStrategy = 'normal';
+
           // Pick URL - mix of sequential and random
           let url: string;
           if (Math.random() < 0.7) {
@@ -944,8 +1030,8 @@ Look for an input field for the verification code and:
             url = urls[Math.floor(Math.random() * urls.length)];
           }
 
-          // Skip recently visited only if we have plenty of URLs and no errors
-          if (this.autonomousState.visitedUrls.has(url) && urls.length > 5 && consecutiveErrors === 0) {
+          // Skip recently visited only if we have plenty of URLs
+          if (this.autonomousState.visitedUrls.has(url) && urls.length > 5) {
             urlIndex++;
             continue;
           }
@@ -1028,14 +1114,20 @@ Look for an input field for the verification code and:
           pageContent: contentStr,
         });
 
-        // Generate task
-        const task = this.generateInteractionTask(currentUrl, interactionsOnCurrentPage, targetInteractions);
+        // Generate task based on recovery strategy
+        const task = this.generateInteractionTask(
+          currentUrl,
+          interactionsOnCurrentPage,
+          targetInteractions,
+          recoveryStrategy,
+          totalErrorsOnPage
+        );
 
         try {
           await this.run(task, (update) => {
             onUpdate?.({
               type: update.type,
-              data: { ...update.data, url: currentUrl }
+              data: { ...update.data, url: currentUrl, strategy: recoveryStrategy }
             });
           });
 
@@ -1043,11 +1135,44 @@ Look for an input field for the verification code and:
           consecutiveErrors = 0;
           interactionsOnCurrentPage++;
           totalInteractions++;
+          pageInsights.push(`Interaction ${interactionsOnCurrentPage} succeeded`);
 
         } catch (runError) {
-          console.error('Task run error:', runError);
+          const errorMsg = runError instanceof Error ? runError.message : String(runError);
+          console.error(`Task run error (strategy: ${recoveryStrategy}, errors: ${totalErrorsOnPage}):`, errorMsg);
           consecutiveErrors++;
-          // Don't throw - just log and continue
+          totalErrorsOnPage++;
+          pageInsights.push(`Error: ${errorMsg.slice(0, 100)}`);
+
+          onUpdate?.({
+            type: 'recovery',
+            data: {
+              error: errorMsg,
+              totalErrorsOnPage,
+              strategy: recoveryStrategy,
+              nextStrategy: totalErrorsOnPage >= 10 ? 'moveOn' : totalErrorsOnPage >= 7 ? 'radical' : totalErrorsOnPage >= 3 ? 'alternative' : 'normal'
+            }
+          });
+
+          // Apply recovery strategies
+          if (totalErrorsOnPage === 3) {
+            onUpdate?.({ type: 'info', data: { message: 'Switching to alternative strategy: using screenshot/vision' } });
+            try {
+              await this.executeTool('take_screenshot', {});
+              await this.sleep(1000);
+            } catch (e) {}
+          } else if (totalErrorsOnPage === 7) {
+            onUpdate?.({ type: 'info', data: { message: 'Switching to radical strategy: scroll, refresh, try different elements' } });
+            try {
+              // Try scrolling to reveal different content
+              await this.executeTool('scroll_page', { direction: 'down', amount: 500 });
+              await this.sleep(1000);
+              await this.executeTool('scroll_page', { direction: 'up', amount: 200 });
+              await this.sleep(500);
+            } catch (e) {}
+          } else if (totalErrorsOnPage === 10) {
+            onUpdate?.({ type: 'info', data: { message: 'Moving on after 10 errors - collecting insights and continuing' } });
+          }
         }
 
         // Natural pause between interactions
@@ -1065,19 +1190,14 @@ Look for an input field for the verification code and:
         // Catch-all for any loop errors - NEVER let the loop exit
         console.error('Loop error (continuing):', loopError);
         consecutiveErrors++;
+        totalErrorsOnPage++;
+        pageInsights.push(`Loop error: ${String(loopError).slice(0, 50)}`);
+
         onUpdate?.({
           type: 'error',
-          data: { error: String(loopError), recovering: true }
+          data: { error: String(loopError), recovering: true, totalErrorsOnPage }
         });
-        await this.sleep(3000);
-
-        // If too many errors, reset to a known good state
-        if (consecutiveErrors > 10) {
-          console.log('Too many errors, resetting to fresh URL...');
-          consecutiveErrors = 0;
-          currentPageUrl = '';
-          interactionsOnCurrentPage = 0;
-        }
+        await this.sleep(2000);
       }
     }
 
@@ -1176,7 +1296,13 @@ Look for an input field for the verification code and:
     });
   }
 
-  private generateInteractionTask(url: string, currentInteractions: number, targetInteractions: number): string {
+  private generateInteractionTask(
+    url: string,
+    currentInteractions: number,
+    targetInteractions: number,
+    recoveryStrategy: 'normal' | 'alternative' | 'radical' | 'moveOn' = 'normal',
+    errorCount: number = 0
+  ): string {
     const persona = this.personaEngine?.getPersona();
     let domain = 'this website';
     try {
@@ -1189,6 +1315,44 @@ Look for an input field for the verification code and:
     const remaining = targetInteractions - currentInteractions;
 
     let task = `You are browsing ${domain}. `;
+
+    // Add strategy-specific instructions
+    if (recoveryStrategy === 'alternative') {
+      task += `
+
+⚠️ ALTERNATIVE STRATEGY (${errorCount} errors encountered):
+Previous approaches are failing. Try these different methods:
+- Use take_screenshot to see the page visually and identify elements
+- Look for different button/link text than what you tried before
+- Try scrolling to find other interactive elements
+- Check if there's a mobile menu or hamburger icon
+- Look for aria-labels or titles on elements
+
+`;
+    } else if (recoveryStrategy === 'radical') {
+      task += `
+
+🔴 RADICAL STRATEGY (${errorCount} errors - last resort):
+Standard DOM interaction is not working. Try VERY different approaches:
+- Use click_at_position with rough coordinates based on typical webpage layouts
+- Try clicking in center of page (x: 500, y: 400) or common button positions
+- Scroll extensively to load dynamic content
+- Look for ANY clickable element, even if not directly relevant
+- Focus on just completing ONE successful action
+
+`;
+    } else if (recoveryStrategy === 'moveOn') {
+      task += `
+
+ℹ️ COLLECTING FINAL INSIGHTS (moving to next site):
+We've tried many approaches on this page. Before moving on:
+- Note what type of page this is
+- Identify any content you did see
+- Just use complete to summarize what you observed
+- No need to interact further
+
+`;
+    }
 
     // ALWAYS handle popups first
     task += `

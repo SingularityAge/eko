@@ -205,10 +205,59 @@ async function executeTool(payload: { tool: string; args: Record<string, any> })
     case 'complete':
       return args.summary;
 
+    case 'click_at_position':
+      return clickAtPosition({ x: args.x, y: args.y });
+
     default:
       // Return DOM tree for unknown tools
       const { domString } = buildDOMTree();
       return `Unknown tool: ${tool}. Current page DOM:\n${domString}`;
+  }
+}
+
+// Click at specific x,y coordinates (fallback for when element indexes don't work)
+async function clickAtPosition(payload: { x: number; y: number }): Promise<string> {
+  const { x, y } = payload;
+
+  try {
+    // First scroll to make sure the position is visible
+    if (y > window.innerHeight) {
+      window.scrollTo({ top: y - window.innerHeight / 2, behavior: 'smooth' });
+      await sleep(500);
+    }
+
+    // Find element at position
+    const element = document.elementFromPoint(x, y);
+    if (!element) {
+      return `No element found at position (${x}, ${y})`;
+    }
+
+    // Simulate human-like click
+    const eventOptions = {
+      view: window,
+      bubbles: true,
+      cancelable: true,
+      clientX: x,
+      clientY: y,
+      button: 0
+    };
+
+    // Fire mouse events sequence
+    element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+    await sleep(50 + Math.random() * 50);
+    element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
+    element.dispatchEvent(new MouseEvent('click', eventOptions));
+
+    // Try native click as well
+    if (element instanceof HTMLElement) {
+      element.click();
+    }
+
+    const tagName = element.tagName.toLowerCase();
+    const text = (element as HTMLElement).innerText?.slice(0, 50) || '';
+    return `Clicked at (${x}, ${y}) on <${tagName}>${text ? `: "${text}"` : ''}`;
+  } catch (error) {
+    return `Click at position failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
