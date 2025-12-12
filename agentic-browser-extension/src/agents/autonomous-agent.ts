@@ -807,11 +807,18 @@ Look for an input field for the verification code and:
   async startAutonomous(
     onUpdate?: (update: { type: string; data: any }) => void
   ): Promise<void> {
-    if (this.autonomousState.status === 'running') return;
+    console.log('startAutonomous called, current status:', this.autonomousState.status);
+
+    if (this.autonomousState.status === 'running') {
+      console.log('Already running, skipping');
+      return;
+    }
 
     this.autonomousState = this.createInitialState();
     this.autonomousState.status = 'running';
     this.state.status = 'running';
+
+    console.log('Status set to running:', this.autonomousState.status);
 
     // Ensure credentials store is initialized
     try {
@@ -838,41 +845,64 @@ Look for an input field for the verification code and:
       data: { status: 'running', phase: 'discovering' }
     });
 
-    try {
-      // Phase 1: Discover starting URLs
-      this.autonomousState.currentPhase = 'discovering';
-      onUpdate?.({ type: 'phase', data: { phase: 'discovering' } });
-
-      let urls: string[] = [];
+    // Keep running until explicitly stopped - wrap everything in infinite retry
+    while (this.autonomousState.status === 'running') {
       try {
-        urls = await this.discoverStartingUrls();
+        // Phase 1: Discover starting URLs
+        this.autonomousState.currentPhase = 'discovering';
+        onUpdate?.({ type: 'phase', data: { phase: 'discovering' } });
+
+        let urls: string[] = [];
+        try {
+          urls = await this.discoverStartingUrls();
+        } catch (error) {
+          console.error('Error discovering URLs, using fallback:', error);
+          onUpdate?.({ type: 'warning', data: { message: 'URL discovery failed, using fallback URLs' } });
+        }
+
+        // Always have some URLs to browse - use fallbacks if discovery failed
+        if (urls.length === 0) {
+          urls = this.getFallbackUrls();
+          onUpdate?.({ type: 'info', data: { message: 'Using fallback URLs for browsing' } });
+        }
+
+        console.log(`Starting autonomous browsing with ${urls.length} URLs:`, urls.slice(0, 5));
+
+        // Phase 2: Start browsing loop
+        this.autonomousState.currentPhase = 'browsing';
+        onUpdate?.({ type: 'phase', data: { phase: 'browsing', urls } });
+
+        await this.browsingLoop(urls, onUpdate);
+
+        // If browsingLoop exits, check why
+        if (this.autonomousState.status !== 'running') {
+          console.log('Browsing loop exited, status:', this.autonomousState.status);
+          break; // User stopped or paused
+        }
+
+        // Loop exited but status is still running - restart with fresh URLs
+        console.log('Browsing loop completed, discovering new URLs...');
+        await this.sleep(2000);
+
       } catch (error) {
-        console.error('Error discovering URLs, using fallback:', error);
-        onUpdate?.({ type: 'warning', data: { message: 'URL discovery failed, using fallback URLs' } });
+        console.error('Autonomous browsing error (will retry):', error);
+        onUpdate?.({
+          type: 'error',
+          data: { error: error instanceof Error ? error.message : String(error), recovering: true }
+        });
+
+        // Wait before retrying
+        await this.sleep(5000);
+
+        // Don't throw - just continue the outer loop
       }
+    }
 
-      // Always have some URLs to browse - use fallbacks if discovery failed
-      if (urls.length === 0) {
-        urls = this.getFallbackUrls();
-        onUpdate?.({ type: 'info', data: { message: 'Using fallback URLs for browsing' } });
-      }
-
-      console.log(`Starting autonomous browsing with ${urls.length} URLs:`, urls.slice(0, 5));
-
-      // Phase 2: Start browsing loop
-      this.autonomousState.currentPhase = 'browsing';
-      onUpdate?.({ type: 'phase', data: { phase: 'browsing', urls } });
-
-      await this.browsingLoop(urls, onUpdate);
-    } catch (error) {
-      console.error('Autonomous browsing error:', error);
-      this.autonomousState.status = 'idle';
-      this.state.status = 'error';
-      onUpdate?.({
-        type: 'error',
-        data: { error: error instanceof Error ? error.message : String(error) }
-      });
-      throw error;
+    // Clean up when done
+    console.log('startAutonomous exiting, final status:', this.autonomousState.status);
+    if (this.tabCleanupInterval) {
+      clearInterval(this.tabCleanupInterval);
+      this.tabCleanupInterval = null;
     }
   }
 

@@ -599,6 +599,10 @@ async function startAutonomous(tabId?: number): Promise<any> {
       currentAutonomousAction = `Taking a break (${Math.round(update.data.duration)}s)...`;
     } else if (update.type === 'email_verification_detected') {
       currentAutonomousAction = `Email verification detected - will check in ${update.data.scheduledIn}`;
+    } else if (update.type === 'recovery') {
+      currentAutonomousAction = `Recovering (strategy: ${update.data.strategy})...`;
+    } else if (update.type === 'info') {
+      currentAutonomousAction = update.data.message;
     }
 
     // Broadcast all updates to sidebar
@@ -614,6 +618,18 @@ async function startAutonomous(tabId?: number): Promise<any> {
       type: 'AUTONOMOUS_STATUS',
       payload: { status: autonomousStatus, action: currentAutonomousAction }
     });
+  }).then(() => {
+    // Loop completed normally (user stopped, or some condition)
+    console.log('Autonomous browsing loop completed');
+    if (autonomousStatus === 'running') {
+      // Loop ended unexpectedly while status was still running
+      autonomousStatus = 'idle';
+      currentAutonomousAction = 'Stopped unexpectedly';
+      broadcastUpdate({
+        type: 'AUTONOMOUS_STATUS',
+        payload: { status: 'idle', action: currentAutonomousAction }
+      });
+    }
   }).catch((error) => {
     console.error('Autonomous agent error:', error);
     autonomousStatus = 'idle';
