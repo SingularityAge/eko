@@ -85,6 +85,11 @@ export class AutonomousAgent extends BaseAgent {
     this.perplexityModel = PERPLEXITY_MODEL;
     this.autonomousState = this.createInitialState();
     this.credentialsStore = getCredentialsStore();
+
+    // Initialize credentials store immediately (async, non-blocking)
+    this.credentialsStore.initialize().catch(err => {
+      console.warn('Failed to initialize credentials store:', err);
+    });
   }
 
   private createInitialState(): AutonomousState {
@@ -756,6 +761,13 @@ Look for an input field for the verification code and:
     this.autonomousState.status = 'running';
     this.state.status = 'running';
 
+    // Ensure credentials store is initialized
+    try {
+      await this.credentialsStore.initialize();
+    } catch (e) {
+      console.warn('Failed to initialize credentials store:', e);
+    }
+
     // Start tab cleanup schedule
     this.scheduleTabCleanup();
 
@@ -765,7 +777,9 @@ Look for an input field for the verification code and:
       if (activeTab?.id) {
         this.autonomousState.mainTabId = activeTab.id;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Failed to get active tab:', e);
+    }
 
     onUpdate?.({
       type: 'status',
@@ -777,10 +791,21 @@ Look for an input field for the verification code and:
       this.autonomousState.currentPhase = 'discovering';
       onUpdate?.({ type: 'phase', data: { phase: 'discovering' } });
 
-      const urls = await this.discoverStartingUrls();
-      if (urls.length === 0) {
-        throw new Error('No URLs discovered for browsing');
+      let urls: string[] = [];
+      try {
+        urls = await this.discoverStartingUrls();
+      } catch (error) {
+        console.error('Error discovering URLs, using fallback:', error);
+        onUpdate?.({ type: 'warning', data: { message: 'URL discovery failed, using fallback URLs' } });
       }
+
+      // Always have some URLs to browse - use fallbacks if discovery failed
+      if (urls.length === 0) {
+        urls = this.getFallbackUrls();
+        onUpdate?.({ type: 'info', data: { message: 'Using fallback URLs for browsing' } });
+      }
+
+      console.log(`Starting autonomous browsing with ${urls.length} URLs:`, urls.slice(0, 5));
 
       // Phase 2: Start browsing loop
       this.autonomousState.currentPhase = 'browsing';
@@ -788,6 +813,7 @@ Look for an input field for the verification code and:
 
       await this.browsingLoop(urls, onUpdate);
     } catch (error) {
+      console.error('Autonomous browsing error:', error);
       this.autonomousState.status = 'idle';
       this.state.status = 'error';
       onUpdate?.({
@@ -798,6 +824,29 @@ Look for an input field for the verification code and:
     }
   }
 
+  // Fallback URLs when Perplexity discovery fails
+  private getFallbackUrls(): string[] {
+    const persona = this.personaEngine?.getPersona();
+    const credentialUrls = this.credentialsStore.getAllUrls();
+
+    const defaultUrls = [
+      'https://www.bing.com',
+      'https://www.reddit.com',
+      'https://www.youtube.com',
+      'https://news.ycombinator.com',
+      'https://www.wikipedia.org',
+      'https://www.amazon.com'
+    ];
+
+    // Add persona's favorite sites if available
+    const personaUrls = persona?.browsingHabits?.favoriteSites
+      ?.map(site => this.normalizeUrl(site))
+      ?.filter((url): url is string => url !== null) || [];
+
+    // Combine: credential URLs first, then persona favorites, then defaults
+    return [...new Set([...credentialUrls, ...personaUrls, ...defaultUrls])];
+  }
+
   private async browsingLoop(
     urls: string[],
     onUpdate?: (update: { type: string; data: any }) => void
@@ -805,93 +854,142 @@ Look for an input field for the verification code and:
     let urlIndex = 0;
     let interactionsOnCurrentPage = 0;
     let consecutiveErrors = 0;
-    const maxConsecutiveErrors = 3;
+    const maxConsecutiveErrors = 5; // More tolerance for errors
     const minInteractionsPerPage = 5;
     const maxInteractionsPerPage = 12;
     let targetInteractions = minInteractionsPerPage + Math.floor(Math.random() * (maxInteractionsPerPage - minInteractionsPerPage));
     let currentPageUrl = '';
+    let totalInteractions = 0;
+    let lastSearchTime = 0;
+    let lastEmailCheckTime = 0;
+    const searchInterval = 10 * 60 * 1000; // Do a search every ~10 minutes
+    const emailCheckInterval = 15 * 60 * 1000; // Check email every ~15 minutes
+
+    console.log('Starting browsing loop with status:', this.autonomousState.status);
 
     while (this.autonomousState.status === 'running') {
-      if (this.state.status === 'paused') {
-        await this.sleep(1000);
-        continue;
-      }
-
-      // Check for scheduled email verification
-      if (
-        this.autonomousState.emailVerificationPending &&
-        this.autonomousState.emailCheckScheduledAt &&
-        Date.now() >= this.autonomousState.emailCheckScheduledAt
-      ) {
-        this.autonomousState.currentPhase = 'verifying';
-        onUpdate?.({ type: 'phase', data: { phase: 'verifying' } });
-
-        await this.handleEmailVerification(onUpdate);
-        this.autonomousState.currentPhase = 'browsing';
-      }
-
-      // Periodic tab cleanup
-      await this.cleanupTabs();
-
-      // Navigate to a new URL if needed:
-      // - First time (no current page)
-      // - Done enough interactions on current page
-      // - Too many consecutive errors on current page
-      const shouldNavigate =
-        !currentPageUrl ||
-        interactionsOnCurrentPage >= targetInteractions ||
-        consecutiveErrors >= maxConsecutiveErrors;
-
-      if (shouldNavigate) {
-        const url = urls[urlIndex % urls.length];
-        urlIndex++;
-
-        // Skip recently visited (but not if we have errors)
-        if (this.autonomousState.visitedUrls.has(url) && urlIndex < urls.length * 2 && consecutiveErrors === 0) {
-          continue;
-        }
-
-        try {
-          // Navigate to new URL
-          await this.executeTool('navigate_to', { url });
-          this.autonomousState.visitedUrls.add(url);
-          currentPageUrl = url;
-
-          // Track this tab
-          try {
-            const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (activeTab?.id && !this.autonomousState.openedTabIds.includes(activeTab.id)) {
-              this.autonomousState.openedTabIds.push(activeTab.id);
-            }
-          } catch (e) {}
-
-          // Wait longer for page load
-          await this.sleep(4000);
-
-          onUpdate?.({
-            type: 'navigation',
-            data: { url }
-          });
-
-          // Reset counters for new page
-          interactionsOnCurrentPage = 0;
-          consecutiveErrors = 0;
-          targetInteractions = minInteractionsPerPage + Math.floor(Math.random() * (maxInteractionsPerPage - minInteractionsPerPage));
-
-        } catch (error) {
-          console.error(`Error navigating to ${url}:`, error);
-          onUpdate?.({
-            type: 'error',
-            data: { error: `Navigation failed: ${error instanceof Error ? error.message : String(error)}` }
-          });
-          await this.sleep(2000);
-          // Try next URL
-          continue;
-        }
-      }
-
       try {
-        // Get current page state with error handling
+        if (this.state.status === 'paused') {
+          await this.sleep(1000);
+          continue;
+        }
+
+        const now = Date.now();
+
+        // Check for scheduled email verification
+        if (
+          this.autonomousState.emailVerificationPending &&
+          this.autonomousState.emailCheckScheduledAt &&
+          now >= this.autonomousState.emailCheckScheduledAt
+        ) {
+          this.autonomousState.currentPhase = 'verifying';
+          onUpdate?.({ type: 'phase', data: { phase: 'verifying' } });
+
+          try {
+            await this.handleEmailVerification(onUpdate);
+          } catch (e) {
+            console.error('Email verification failed:', e);
+          }
+          this.autonomousState.currentPhase = 'browsing';
+        }
+
+        // Periodic email check (even without pending verification)
+        if (now - lastEmailCheckTime > emailCheckInterval && this.personaEngine?.getPersona()?.email) {
+          lastEmailCheckTime = now;
+          if (Math.random() < 0.3) { // 30% chance to check email at interval
+            onUpdate?.({ type: 'phase', data: { phase: 'email', action: 'checking_email' } });
+            try {
+              await this.doEmailCheck(onUpdate);
+            } catch (e) {
+              console.warn('Email check failed:', e);
+            }
+          }
+        }
+
+        // Periodic search (using Bing)
+        if (now - lastSearchTime > searchInterval && Math.random() < 0.4) {
+          lastSearchTime = now;
+          onUpdate?.({ type: 'phase', data: { phase: 'searching', action: 'bing_search' } });
+          try {
+            await this.doBingSearch(onUpdate);
+            currentPageUrl = 'https://www.bing.com';
+            interactionsOnCurrentPage = 0;
+            targetInteractions = 3 + Math.floor(Math.random() * 4); // Fewer interactions after search
+            continue;
+          } catch (e) {
+            console.warn('Bing search failed:', e);
+          }
+        }
+
+        // Periodic tab cleanup
+        try {
+          await this.cleanupTabs();
+        } catch (e) {
+          console.warn('Tab cleanup failed:', e);
+        }
+
+        // Navigate to a new URL if needed
+        const shouldNavigate =
+          !currentPageUrl ||
+          interactionsOnCurrentPage >= targetInteractions ||
+          consecutiveErrors >= maxConsecutiveErrors;
+
+        if (shouldNavigate) {
+          // Pick URL - mix of sequential and random
+          let url: string;
+          if (Math.random() < 0.7) {
+            url = urls[urlIndex % urls.length];
+            urlIndex++;
+          } else {
+            url = urls[Math.floor(Math.random() * urls.length)];
+          }
+
+          // Skip recently visited only if we have plenty of URLs and no errors
+          if (this.autonomousState.visitedUrls.has(url) && urls.length > 5 && consecutiveErrors === 0) {
+            urlIndex++;
+            continue;
+          }
+
+          try {
+            console.log(`Navigating to: ${url}`);
+            await this.executeTool('navigate_to', { url });
+            this.autonomousState.visitedUrls.add(url);
+            currentPageUrl = url;
+
+            // Track this tab
+            try {
+              const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+              if (activeTab?.id && !this.autonomousState.openedTabIds.includes(activeTab.id)) {
+                this.autonomousState.openedTabIds.push(activeTab.id);
+              }
+            } catch (e) {}
+
+            // Wait for page load
+            await this.sleep(3000 + Math.random() * 2000);
+
+            onUpdate?.({
+              type: 'navigation',
+              data: { url, totalInteractions }
+            });
+
+            // Reset counters for new page
+            interactionsOnCurrentPage = 0;
+            consecutiveErrors = 0;
+            targetInteractions = minInteractionsPerPage + Math.floor(Math.random() * (maxInteractionsPerPage - minInteractionsPerPage));
+
+          } catch (error) {
+            console.error(`Error navigating to ${url}:`, error);
+            onUpdate?.({
+              type: 'warning',
+              data: { message: `Navigation failed: ${url}`, error: String(error) }
+            });
+            consecutiveErrors++;
+            await this.sleep(1000);
+            continue;
+          }
+        }
+
+        // Get current page state
         let pageInfo: any = {};
         let contentStr = '';
 
@@ -908,7 +1006,6 @@ Look for an input field for the verification code and:
           console.warn('Failed to extract content:', e);
         }
 
-        // Use whatever URL we have
         const currentUrl = pageInfo?.url || currentPageUrl || '';
 
         // Check for email verification prompts
@@ -931,19 +1028,27 @@ Look for an input field for the verification code and:
           pageContent: contentStr,
         });
 
-        // Generate task that emphasizes interaction over navigation
+        // Generate task
         const task = this.generateInteractionTask(currentUrl, interactionsOnCurrentPage, targetInteractions);
 
-        await this.run(task, (update) => {
-          onUpdate?.({
-            type: update.type,
-            data: { ...update.data, url: currentUrl }
+        try {
+          await this.run(task, (update) => {
+            onUpdate?.({
+              type: update.type,
+              data: { ...update.data, url: currentUrl }
+            });
           });
-        });
 
-        // Success! Reset error counter and increment interactions
-        consecutiveErrors = 0;
-        interactionsOnCurrentPage++;
+          // Success!
+          consecutiveErrors = 0;
+          interactionsOnCurrentPage++;
+          totalInteractions++;
+
+        } catch (runError) {
+          console.error('Task run error:', runError);
+          consecutiveErrors++;
+          // Don't throw - just log and continue
+        }
 
         // Natural pause between interactions
         const pauseDuration = 1000 + Math.random() * 3000;
@@ -956,22 +1061,119 @@ Look for an input field for the verification code and:
           await this.sleep(breakDuration * 1000);
         }
 
-      } catch (error) {
+      } catch (loopError) {
+        // Catch-all for any loop errors - NEVER let the loop exit
+        console.error('Loop error (continuing):', loopError);
         consecutiveErrors++;
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`Error during interaction (${consecutiveErrors}/${maxConsecutiveErrors}):`, errorMsg);
-
         onUpdate?.({
           type: 'error',
-          data: { error: errorMsg, consecutiveErrors, willRetry: consecutiveErrors < maxConsecutiveErrors }
+          data: { error: String(loopError), recovering: true }
         });
+        await this.sleep(3000);
 
-        // Wait before retry, longer wait for more errors
-        await this.sleep(2000 * consecutiveErrors);
-
-        // Don't count as interaction - we'll retry or move to next page
+        // If too many errors, reset to a known good state
+        if (consecutiveErrors > 10) {
+          console.log('Too many errors, resetting to fresh URL...');
+          consecutiveErrors = 0;
+          currentPageUrl = '';
+          interactionsOnCurrentPage = 0;
+        }
       }
     }
+
+    console.log('Browsing loop ended, status:', this.autonomousState.status);
+  }
+
+  // Do a Bing search based on persona interests
+  private async doBingSearch(
+    onUpdate?: (update: { type: string; data: any }) => void
+  ): Promise<void> {
+    const persona = this.personaEngine?.getPersona() || null;
+    const searchQueries = this.generateSearchQueries(persona);
+    const query = searchQueries[Math.floor(Math.random() * searchQueries.length)];
+
+    onUpdate?.({ type: 'search', data: { query, engine: 'bing' } });
+
+    // Navigate to Bing
+    await this.executeTool('navigate_to', { url: 'https://www.bing.com' });
+    await this.sleep(2000);
+
+    // Type search query
+    await this.executeTool('type_text', { text: query, press_enter: true });
+    await this.sleep(3000);
+
+    this.logActivity({
+      type: 'search',
+      details: { query, engine: 'bing' }
+    });
+  }
+
+  // Generate search queries based on persona
+  private generateSearchQueries(persona: PersonaProfile | null): string[] {
+    const defaultQueries = [
+      'latest news today',
+      'best restaurants near me',
+      'weather forecast',
+      'trending topics',
+      'how to cook easy recipes',
+      'best movies 2024',
+      'tech news',
+      'sports scores'
+    ];
+
+    if (!persona) return defaultQueries;
+
+    const personaQueries: string[] = [];
+
+    // Add interest-based queries
+    for (const interest of persona.interests) {
+      personaQueries.push(`${interest} news`);
+      personaQueries.push(`best ${interest} tips`);
+      personaQueries.push(`${interest} for beginners`);
+    }
+
+    // Add location-based queries
+    personaQueries.push(`things to do in ${persona.location.city}`);
+    personaQueries.push(`${persona.location.city} events`);
+    personaQueries.push(`restaurants in ${persona.location.city}`);
+
+    // Add occupation-based queries
+    personaQueries.push(`${persona.occupation} career tips`);
+    personaQueries.push(`${persona.occupation} salary`);
+
+    return [...personaQueries, ...defaultQueries];
+  }
+
+  // Check email periodically
+  private async doEmailCheck(
+    onUpdate?: (update: { type: string; data: any }) => void
+  ): Promise<void> {
+    const persona = this.personaEngine?.getPersona();
+    if (!persona?.email) return;
+
+    const emailUrls: Record<string, string> = {
+      gmail: 'https://mail.google.com',
+      outlook: 'https://outlook.live.com/mail',
+      yahoo: 'https://mail.yahoo.com',
+      protonmail: 'https://mail.proton.me'
+    };
+
+    const url = emailUrls[persona.email.provider] || persona.email.loginUrl;
+    if (!url) return;
+
+    onUpdate?.({ type: 'email', data: { action: 'checking', provider: persona.email.provider } });
+
+    await this.executeTool('navigate_to', { url });
+    await this.sleep(5000);
+
+    // Just browse the inbox briefly
+    await this.executeTool('scroll_page', { direction: 'down', amount: 300 });
+    await this.sleep(2000);
+
+    this.logActivity({
+      type: 'email_check',
+      details: { provider: persona.email.provider }
+    });
   }
 
   private generateInteractionTask(url: string, currentInteractions: number, targetInteractions: number): string {

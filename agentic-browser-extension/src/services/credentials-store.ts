@@ -149,12 +149,23 @@ class CredentialsStore {
 
   // Get all domains we have accounts for
   getAllDomains(): string[] {
+    if (!this.initialized) {
+      return []; // Return empty if not initialized yet
+    }
     return Array.from(this.credentials.values()).map(c => c.domain);
   }
 
   // Get all URLs we have accounts for (for browsing)
   getAllUrls(): string[] {
+    if (!this.initialized) {
+      return []; // Return empty if not initialized yet
+    }
     return Array.from(this.credentials.values()).map(c => c.url);
+  }
+
+  // Check if store is initialized
+  isInitialized(): boolean {
+    return this.initialized;
   }
 
   // Update last login time
