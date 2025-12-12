@@ -158,6 +158,15 @@ export class AutonomousBrowserAgent {
   private consecutiveFailures: number = 0;
   private useVisionMode: boolean = false;
 
+  // Adaptive planning system
+  private errorTimestamps: number[] = [];
+  private lastErrorCheckTime: number = Date.now();
+  private plannedActions: Array<{ name: string; args: any }> = [];
+  private readonly MAX_PLAN_STEPS: number = 5;
+  private readonly MIN_PLAN_STEPS: number = 1;
+  private readonly ERROR_WINDOW_MS: number = 60000; // 1 minute window for error rate
+  private readonly SMOOTH_WINDOW_MS: number = 300000; // 5 minutes for max planning
+
   constructor() {
     this.llm = getOpenRouter();
     this.state = {
@@ -183,6 +192,62 @@ export class AutonomousBrowserAgent {
     return { ...this.state };
   }
 
+  // Record an error timestamp for adaptive planning
+  private recordError(): void {
+    const now = Date.now();
+    this.errorTimestamps.push(now);
+    // Keep only errors from the last 5 minutes
+    this.errorTimestamps = this.errorTimestamps.filter(t => now - t < this.SMOOTH_WINDOW_MS);
+  }
+
+  // Calculate how many steps to plan ahead based on error rate
+  private calculatePlanningDepth(): number {
+    const now = Date.now();
+
+    // Count errors in the last minute
+    const recentErrors = this.errorTimestamps.filter(t => now - t < this.ERROR_WINDOW_MS).length;
+
+    // Time since last error
+    const lastErrorTime = this.errorTimestamps.length > 0
+      ? this.errorTimestamps[this.errorTimestamps.length - 1]
+      : 0;
+    const timeSinceLastError = now - lastErrorTime;
+
+    // If 5+ errors in last minute, plan only 1 step
+    if (recentErrors >= 5) {
+      console.log('[AGENT] High error rate (', recentErrors, '/min) - planning 1 step');
+      return this.MIN_PLAN_STEPS;
+    }
+
+    // If no errors for 5 minutes, plan 5 steps
+    if (timeSinceLastError >= this.SMOOTH_WINDOW_MS || this.errorTimestamps.length === 0) {
+      console.log('[AGENT] Smooth sailing (no errors for 5min) - planning 5 steps');
+      return this.MAX_PLAN_STEPS;
+    }
+
+    // Linear interpolation between min and max based on error rate
+    // 0 errors/min = 5 steps, 5 errors/min = 1 step
+    const errorRate = recentErrors; // errors per minute
+    const planSteps = Math.max(
+      this.MIN_PLAN_STEPS,
+      Math.min(
+        this.MAX_PLAN_STEPS,
+        Math.round(this.MAX_PLAN_STEPS - (errorRate * (this.MAX_PLAN_STEPS - this.MIN_PLAN_STEPS) / 5))
+      )
+    );
+
+    console.log('[AGENT] Adaptive planning:', planSteps, 'steps (', recentErrors, 'errors/min)');
+    return planSteps;
+  }
+
+  // Clear planned actions (called when context changes significantly)
+  private clearPlannedActions(): void {
+    if (this.plannedActions.length > 0) {
+      console.log('[AGENT] Clearing', this.plannedActions.length, 'planned actions');
+      this.plannedActions = [];
+    }
+  }
+
   async start(): Promise<void> {
     if (this.running) {
       console.log('[AGENT] Already running');
@@ -205,6 +270,9 @@ export class AutonomousBrowserAgent {
     this.visitedUrls.clear();
     this.useVisionMode = false;
     this.consecutiveFailures = 0;
+    this.errorTimestamps = [];
+    this.plannedActions = [];
+    this.lastErrorCheckTime = Date.now();
 
     this.updateState({ status: 'running', currentAction: 'Initializing...', totalActions: 0, errors: 0 });
 
@@ -432,24 +500,49 @@ export class AutonomousBrowserAgent {
         const domain = extractDomain(pageState.url);
         const cred = await getCredentialByDomain(domain);
 
-        // Generate task
-        let task: string;
-        let screenshot: string | null = null;
+        // Adaptive planning: get action from queue or plan new actions
+        let action: { name: string; args: any } | null = null;
 
-        if (this.useVisionMode) {
-          this.updateState({ currentAction: 'Taking screenshot for vision analysis...' });
-          screenshot = await this.takeScreenshot();
-          task = this.generateVisionTask(pageState, cred, screenshot);
+        if (this.plannedActions.length > 0) {
+          // Use next planned action
+          action = this.plannedActions.shift()!;
+          console.log('[AGENT] Using planned action:', action.name, '(', this.plannedActions.length, 'remaining)');
         } else {
-          task = this.generateTask(pageState, cred);
+          // Calculate how many steps to plan
+          const planDepth = this.calculatePlanningDepth();
+
+          // Generate task
+          let task: string;
+          let screenshot: string | null = null;
+
+          if (this.useVisionMode) {
+            this.updateState({ currentAction: 'Taking screenshot for vision analysis...' });
+            screenshot = await this.takeScreenshot();
+            task = this.generateVisionTask(pageState, cred, screenshot);
+          } else {
+            task = this.generateTask(pageState, cred, planDepth);
+          }
+
+          // Get LLM decision(s)
+          const thinkingMsg = planDepth > 1
+            ? `Planning ${planDepth} steps ahead...`
+            : (this.useVisionMode ? 'Analyzing with vision...' : 'Thinking...');
+          this.updateState({ currentAction: thinkingMsg });
+          console.log('[AGENT] Calling LLM for', planDepth, 'action(s)...');
+
+          const actions = await this.getNextActions(task, pageState, screenshot, planDepth);
+
+          if (actions.length > 0) {
+            action = actions[0];
+            // Queue remaining actions for future iterations
+            if (actions.length > 1) {
+              this.plannedActions = actions.slice(1);
+              console.log('[AGENT] Queued', this.plannedActions.length, 'future actions');
+            }
+          }
         }
 
-        // Get LLM decision
-        this.updateState({ currentAction: this.useVisionMode ? 'Analyzing with vision...' : 'Thinking...' });
-        console.log('[AGENT] Calling LLM for next action...');
-
-        const action = await this.getNextAction(task, pageState, screenshot);
-        console.log('[AGENT] LLM suggested action:', action?.name, action?.args);
+        console.log('[AGENT] Action to execute:', action?.name, action?.args);
 
         if (action) {
           this.updateState({ currentAction: `Executing: ${action.name}` });
@@ -459,6 +552,8 @@ export class AutonomousBrowserAgent {
           // Check if action succeeded
           if (result.includes('Error')) {
             this.consecutiveFailures++;
+            this.recordError(); // Record for adaptive planning
+            this.clearPlannedActions(); // Clear plan on error - context may have changed
             console.log('[AGENT] Consecutive failures:', this.consecutiveFailures);
             if (this.consecutiveFailures >= 3 && !this.useVisionMode) {
               console.log('[AGENT] 3 consecutive failures, switching to vision mode');
@@ -566,7 +661,7 @@ export class AutonomousBrowserAgent {
     }
   }
 
-  private generateTask(pageState: { url: string; title: string; elements: string }, credential: Credential | null): string {
+  private generateTask(pageState: { url: string; title: string; elements: string }, credential: Credential | null, planDepth: number = 1): string {
     let task = '';
 
     if (this.sessionSummary) {
@@ -583,15 +678,6 @@ export class AutonomousBrowserAgent {
       task += `You have an account on this site:\n- Email: ${credential.email}\n- Password: ${credential.password}\nIf you see a login form, log in with these credentials.\n\n`;
     }
 
-    // Check for overlays that need automatic handling
-    const elementsLower = pageState.elements.toLowerCase();
-    const hasOverlay = elementsLower.includes('[overlay]');
-    const hasCookiePopup = elementsLower.includes('cookie') && (elementsLower.includes('accept') || elementsLower.includes('allow'));
-    const hasSocialLogin = elementsLower.includes('sign in with google') ||
-                           elementsLower.includes('continue with google') ||
-                           elementsLower.includes('sign in with apple') ||
-                           elementsLower.includes('continue with facebook');
-
     task += `Interactive elements on page:\n${pageState.elements.slice(0, 8000)}\n\n`;
 
     task += `Instructions:
@@ -600,9 +686,13 @@ export class AutonomousBrowserAgent {
 - Close any Google/Apple/Facebook login popups (press_escape or click close/X)
 - Never use social login buttons - only email/password
 - If stuck on a paywall, use 'done' to move on
-- Use 'done' when finished with current site
+- Use 'done' when finished with current site\n`;
 
-What single action should you take next?`;
+    if (planDepth > 1) {
+      task += `\nPLANNING MODE: Plan ${planDepth} sequential actions ahead. Make ${planDepth} tool calls in sequence for the next ${planDepth} steps you would take. This helps you work more efficiently when things are going smoothly.`;
+    } else {
+      task += `\nWhat single action should you take next?`;
+    }
 
     return task;
   }
@@ -680,6 +770,79 @@ Reply with a single tool call for your next action.`
       return { name: 'scroll', args: { direction: 'down', amount: 300 } };
     } catch (e) {
       console.error('[AGENT] LLM error:', e);
+      throw e;
+    }
+  }
+
+  // Get multiple planned actions at once (adaptive planning)
+  private async getNextActions(task: string, pageState: { url: string }, screenshot: string | null, planDepth: number): Promise<Array<{ name: string; args: any }>> {
+    const systemContent = planDepth > 1
+      ? `You are an autonomous web browser. You browse naturally like a human.
+- ALWAYS accept cookies when you see a consent popup
+- NEVER use Google/Apple/Facebook login - use email/password instead
+- If you see a social login overlay, press Escape or find the X to close it
+- If the page seems stuck or has a paywall, use 'done' to move on
+- Use click_coordinates when element indexes fail (after seeing screenshot)
+
+MULTI-STEP PLANNING: You can plan ${planDepth} actions ahead. Make up to ${planDepth} tool calls for sequential actions you want to take. Plan actions that logically follow each other (e.g., click input field, then type, then click submit).`
+      : `You are an autonomous web browser. You browse naturally like a human.
+- ALWAYS accept cookies when you see a consent popup
+- NEVER use Google/Apple/Facebook login - use email/password instead
+- If you see a social login overlay, press Escape or find the X to close it
+- If the page seems stuck or has a paywall, use 'done' to move on
+- Use click_coordinates when element indexes fail (after seeing screenshot)
+Reply with a single tool call for your next action.`;
+
+    const messages: LLMMessage[] = [
+      { role: 'system', content: systemContent }
+    ];
+
+    // Add recent conversation context
+    const recentHistory = this.conversationHistory.slice(-10);
+    for (const msg of recentHistory) {
+      messages.push(msg);
+    }
+
+    // Add current task
+    const userMessage: LLMMessage = { role: 'user', content: task };
+    messages.push(userMessage);
+
+    try {
+      const response = await this.llm.chat(messages, this.model, TOOLS, 0.7);
+
+      await this.addToHistory(userMessage);
+      if (response.content) {
+        await this.addToHistory({ role: 'assistant', content: response.content });
+      }
+
+      const actions: Array<{ name: string; args: any }> = [];
+
+      if (response.toolCalls && response.toolCalls.length > 0) {
+        // Process up to planDepth tool calls
+        const callsToProcess = response.toolCalls.slice(0, planDepth);
+
+        for (const tc of callsToProcess) {
+          try {
+            const args = JSON.parse(tc.function.arguments);
+            actions.push({ name: tc.function.name, args });
+
+            await this.addToHistory({
+              role: 'assistant',
+              content: `Planned Action: ${tc.function.name}(${JSON.stringify(args)})`
+            });
+          } catch (parseError) {
+            console.warn('[AGENT] Failed to parse tool call:', tc, parseError);
+          }
+        }
+
+        console.log('[AGENT] Planned', actions.length, 'actions');
+        return actions;
+      }
+
+      // Fallback: scroll down
+      return [{ name: 'scroll', args: { direction: 'down', amount: 300 } }];
+    } catch (e) {
+      console.error('[AGENT] LLM error in getNextActions:', e);
       throw e;
     }
   }

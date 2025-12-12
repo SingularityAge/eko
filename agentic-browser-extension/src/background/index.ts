@@ -21,6 +21,7 @@ let currentState: BrowserState = {
 
 // Tab management - track tabs opened by the agent
 const agentTabs: Map<number, { openedAt: number; closeAfter: number }> = new Map();
+let currentMaxTabs: number = 1 + Math.floor(Math.random() * 5); // Random 1-5 tabs max
 
 // Listen for state changes from agent
 agent.setStateCallback((state) => {
@@ -82,20 +83,43 @@ async function fetchOpenRouterModels(apiKey: string): Promise<any[]> {
   }
 }
 
-// Tab cleanup - close abandoned tabs
+// Tab cleanup - close abandoned tabs and enforce max tab limit
 function scheduleTabCleanup(tabId: number): void {
-  // Random delay between 10 seconds and 3 minutes
-  const delay = 10000 + Math.random() * 170000;
+  // Random delay between 1-5 minutes (60000ms - 300000ms)
+  const delay = 60000 + Math.random() * 240000;
   agentTabs.set(tabId, { openedAt: Date.now(), closeAfter: delay });
+
+  // Check if we exceed max tabs - close oldest ones
+  enforceMaxTabs();
 
   setTimeout(() => {
     const tabInfo = agentTabs.get(tabId);
     if (tabInfo && Date.now() - tabInfo.openedAt >= tabInfo.closeAfter) {
       chrome.tabs.remove(tabId).catch(() => {});
       agentTabs.delete(tabId);
-      console.log('[BG] Closed abandoned tab:', tabId);
+      console.log('[BG] Closed abandoned tab after timeout:', tabId);
+      // Randomize max tabs for next cycle
+      currentMaxTabs = 1 + Math.floor(Math.random() * 5);
     }
   }, delay);
+}
+
+// Enforce maximum tab limit - close oldest tabs if over limit
+function enforceMaxTabs(): void {
+  if (agentTabs.size <= currentMaxTabs) return;
+
+  // Sort tabs by openedAt time (oldest first)
+  const sortedTabs = Array.from(agentTabs.entries())
+    .sort((a, b) => a[1].openedAt - b[1].openedAt);
+
+  // Close oldest tabs until we're within limit
+  const tabsToClose = sortedTabs.slice(0, agentTabs.size - currentMaxTabs);
+
+  for (const [tabId] of tabsToClose) {
+    chrome.tabs.remove(tabId).catch(() => {});
+    agentTabs.delete(tabId);
+    console.log('[BG] Closed tab to enforce limit:', tabId, '(max:', currentMaxTabs, ')');
+  }
 }
 
 // Keep active tab in focus
@@ -306,6 +330,45 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // Set up side panel behavior
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
+// Listen for new tabs and automatically track them for cleanup
+chrome.tabs.onCreated.addListener((tab) => {
+  // Don't track extension pages or chrome:// pages
+  if (tab.id && !tab.url?.startsWith('chrome://') && !tab.url?.startsWith('chrome-extension://')) {
+    console.log('[BG] New tab created, scheduling cleanup:', tab.id);
+    scheduleTabCleanup(tab.id);
+  }
+});
+
+// Track when tabs are removed to clean up our tracking
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (agentTabs.has(tabId)) {
+    agentTabs.delete(tabId);
+    console.log('[BG] Tab removed from tracking:', tabId);
+  }
+});
+
+// Periodic tab cleanup - runs every 30 seconds to enforce limits
+setInterval(() => {
+  // Enforce max tabs
+  enforceMaxTabs();
+
+  // Clean up any tabs that have exceeded their timeout
+  const now = Date.now();
+  for (const [tabId, tabInfo] of agentTabs.entries()) {
+    if (now - tabInfo.openedAt >= tabInfo.closeAfter) {
+      chrome.tabs.remove(tabId).catch(() => {});
+      agentTabs.delete(tabId);
+      console.log('[BG] Periodic cleanup - closed tab:', tabId);
+    }
+  }
+
+  // Periodically randomize max tabs (every ~5 minutes based on 30s intervals)
+  if (Math.random() < 0.1) {
+    currentMaxTabs = 1 + Math.floor(Math.random() * 5);
+    console.log('[BG] New max tabs limit:', currentMaxTabs);
+  }
+}, 30000);
 
 // Log startup
 console.log('[AUTOBROWSER] Background service worker started');
