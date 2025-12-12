@@ -11,7 +11,8 @@ import { getCredentialsStore, CredentialsStore } from '../services/credentials-s
 import { PersonaProfile, Tool, Activity, StoredCredential } from '../shared/types';
 
 // Perplexity model for discovering URLs based on persona
-const PERPLEXITY_MODEL = 'perplexity/sonar-pro';
+// Using the correct OpenRouter model ID for Perplexity sonar-pro-search
+const PERPLEXITY_MODEL = 'perplexity/sonar-pro-search';
 
 // Email verification detection patterns
 const EMAIL_VERIFICATION_PATTERNS = [
@@ -645,18 +646,23 @@ Look for an input field for the verification code and:
 
   // Discover starting URLs based on persona using Perplexity
   async discoverStartingUrls(): Promise<string[]> {
+    console.log('[DISCOVER] Starting URL discovery...');
+
     // Always initialize credentials store
     await this.credentialsStore.initialize();
 
     const persona = this.personaEngine?.getPersona();
+    console.log('[DISCOVER] Persona loaded:', persona ? persona.name : 'none');
 
     // Get URLs from sites we have accounts on (prioritize these!)
     const credentialUrls = this.credentialsStore.getAllUrls();
+    console.log('[DISCOVER] Credential URLs:', credentialUrls.length);
 
     if (!persona) {
+      console.log('[DISCOVER] No persona, using default URLs');
       // Even without persona, include signed-up sites
       const defaultUrls = [
-        'https://www.google.com',
+        'https://www.bing.com',
         'https://www.reddit.com',
         'https://www.youtube.com'
       ];
@@ -665,6 +671,7 @@ Look for an input field for the verification code and:
     }
 
     const query = this.buildDiscoveryQuery(persona);
+    console.log('[DISCOVER] Query:', query);
 
     try {
       this.logActivity({
@@ -672,8 +679,12 @@ Look for an input field for the verification code and:
         details: { phase: 'discovering', query, signedUpSites: credentialUrls.length }
       });
 
+      console.log('[DISCOVER] Calling Perplexity with model:', this.perplexityModel);
       const searchResult = await this.llm.searchWithPerplexity(query, this.perplexityModel);
+      console.log('[DISCOVER] Perplexity response length:', searchResult?.length || 0);
+
       const urls = this.extractUrlsFromText(searchResult);
+      console.log('[DISCOVER] Extracted URLs:', urls.length);
 
       const favoriteSites = persona.browsingHabits.favoriteSites
         .map(site => this.normalizeUrl(site))
@@ -692,18 +703,18 @@ Look for an input field for the verification code and:
       this.autonomousState.discoveredUrls = allUrls;
 
       // Log how many signed-up sites we're including
-      if (credentialUrls.length > 0) {
-        console.log(`Including ${credentialUrls.length} sites with stored credentials in browsing pool`);
-      }
+      console.log(`[DISCOVER] Total URLs: ${allUrls.length}, credential sites: ${credentialUrls.length}`);
 
       return allUrls.slice(0, 15); // Return more URLs now that we have credential sites
     } catch (error) {
-      console.error('Error discovering URLs:', error);
+      console.error('[DISCOVER] Error discovering URLs:', error);
       // Fallback: include credential URLs with favorite sites
       const fallbackUrls = persona.browsingHabits.favoriteSites.slice(0, 5)
         .map(site => this.normalizeUrl(site))
         .filter(url => url !== null) as string[];
-      return [...new Set([...credentialUrls, ...fallbackUrls])];
+      const result = [...new Set([...credentialUrls, ...fallbackUrls])];
+      console.log('[DISCOVER] Using fallback URLs:', result.length);
+      return result;
     }
   }
 
@@ -807,10 +818,10 @@ Look for an input field for the verification code and:
   async startAutonomous(
     onUpdate?: (update: { type: string; data: any }) => void
   ): Promise<void> {
-    console.log('startAutonomous called, current status:', this.autonomousState.status);
+    console.log('[AUTONOMOUS] startAutonomous called, current status:', this.autonomousState.status);
 
     if (this.autonomousState.status === 'running') {
-      console.log('Already running, skipping');
+      console.log('[AUTONOMOUS] Already running, skipping');
       return;
     }
 
@@ -818,13 +829,14 @@ Look for an input field for the verification code and:
     this.autonomousState.status = 'running';
     this.state.status = 'running';
 
-    console.log('Status set to running:', this.autonomousState.status);
+    console.log('[AUTONOMOUS] Status set to running');
 
     // Ensure credentials store is initialized
     try {
       await this.credentialsStore.initialize();
+      console.log('[AUTONOMOUS] Credentials store initialized');
     } catch (e) {
-      console.warn('Failed to initialize credentials store:', e);
+      console.warn('[AUTONOMOUS] Failed to initialize credentials store:', e);
     }
 
     // Start tab cleanup schedule
@@ -835,9 +847,10 @@ Look for an input field for the verification code and:
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (activeTab?.id) {
         this.autonomousState.mainTabId = activeTab.id;
+        console.log('[AUTONOMOUS] Main tab ID:', activeTab.id);
       }
     } catch (e) {
-      console.warn('Failed to get active tab:', e);
+      console.warn('[AUTONOMOUS] Failed to get active tab:', e);
     }
 
     onUpdate?.({
@@ -845,61 +858,75 @@ Look for an input field for the verification code and:
       data: { status: 'running', phase: 'discovering' }
     });
 
-    // Keep running until explicitly stopped - wrap everything in infinite retry
-    while (this.autonomousState.status === 'running') {
+    // MAIN LOOP - Keep running FOREVER until explicitly stopped
+    // This is the outer infinite loop that should never exit on its own
+    let loopIteration = 0;
+    while (true) {
+      // Check if we should stop
+      if (this.autonomousState.status !== 'running') {
+        console.log('[AUTONOMOUS] Status changed to:', this.autonomousState.status, '- exiting main loop');
+        break;
+      }
+
+      loopIteration++;
+      console.log(`[AUTONOMOUS] Main loop iteration ${loopIteration}`);
+
       try {
         // Phase 1: Discover starting URLs
         this.autonomousState.currentPhase = 'discovering';
         onUpdate?.({ type: 'phase', data: { phase: 'discovering' } });
+        console.log('[AUTONOMOUS] Phase 1: Discovering URLs...');
 
         let urls: string[] = [];
         try {
           urls = await this.discoverStartingUrls();
+          console.log(`[AUTONOMOUS] Discovered ${urls.length} URLs`);
         } catch (error) {
-          console.error('Error discovering URLs, using fallback:', error);
+          console.error('[AUTONOMOUS] Error discovering URLs:', error);
           onUpdate?.({ type: 'warning', data: { message: 'URL discovery failed, using fallback URLs' } });
         }
 
         // Always have some URLs to browse - use fallbacks if discovery failed
-        if (urls.length === 0) {
+        if (!urls || urls.length === 0) {
           urls = this.getFallbackUrls();
+          console.log(`[AUTONOMOUS] Using ${urls.length} fallback URLs`);
           onUpdate?.({ type: 'info', data: { message: 'Using fallback URLs for browsing' } });
         }
 
-        console.log(`Starting autonomous browsing with ${urls.length} URLs:`, urls.slice(0, 5));
+        console.log('[AUTONOMOUS] Starting browsing with URLs:', urls.slice(0, 5));
 
         // Phase 2: Start browsing loop
         this.autonomousState.currentPhase = 'browsing';
         onUpdate?.({ type: 'phase', data: { phase: 'browsing', urls } });
 
-        await this.browsingLoop(urls, onUpdate);
-
-        // If browsingLoop exits, check why
-        if (this.autonomousState.status !== 'running') {
-          console.log('Browsing loop exited, status:', this.autonomousState.status);
-          break; // User stopped or paused
+        try {
+          await this.browsingLoop(urls, onUpdate);
+          console.log('[AUTONOMOUS] browsingLoop returned normally');
+        } catch (browsingError) {
+          console.error('[AUTONOMOUS] browsingLoop threw error:', browsingError);
+          // Don't rethrow - continue to next iteration
         }
 
-        // Loop exited but status is still running - restart with fresh URLs
-        console.log('Browsing loop completed, discovering new URLs...');
-        await this.sleep(2000);
+        // If still running, continue with new URLs after a delay
+        if (this.autonomousState.status === 'running') {
+          console.log('[AUTONOMOUS] Continuing to next iteration...');
+          await this.sleep(3000);
+        }
 
       } catch (error) {
-        console.error('Autonomous browsing error (will retry):', error);
+        console.error('[AUTONOMOUS] Outer loop error (will retry):', error);
         onUpdate?.({
           type: 'error',
           data: { error: error instanceof Error ? error.message : String(error), recovering: true }
         });
 
-        // Wait before retrying
+        // Wait before retrying - but don't exit the loop!
         await this.sleep(5000);
-
-        // Don't throw - just continue the outer loop
       }
     }
 
     // Clean up when done
-    console.log('startAutonomous exiting, final status:', this.autonomousState.status);
+    console.log('[AUTONOMOUS] startAutonomous exiting, final status:', this.autonomousState.status);
     if (this.tabCleanupInterval) {
       clearInterval(this.tabCleanupInterval);
       this.tabCleanupInterval = null;
@@ -948,10 +975,15 @@ Look for an input field for the verification code and:
     let pageInsights: string[] = []; // Collect insights even from failed interactions
     const searchInterval = 10 * 60 * 1000; // Do a search every ~10 minutes
     const emailCheckInterval = 15 * 60 * 1000; // Check email every ~15 minutes
+    let browsingIteration = 0;
 
-    console.log('Starting browsing loop with status:', this.autonomousState.status);
+    console.log('[BROWSING] Starting browsing loop with', urls.length, 'URLs');
+    console.log('[BROWSING] Status:', this.autonomousState.status);
 
+    // Inner browsing loop - keep going as long as we're running
     while (this.autonomousState.status === 'running') {
+      browsingIteration++;
+      console.log(`[BROWSING] Iteration ${browsingIteration}, page interactions: ${interactionsOnCurrentPage}/${targetInteractions}`);
       try {
         if (this.state.status === 'paused') {
           await this.sleep(1000);
@@ -1153,13 +1185,15 @@ Look for an input field for the verification code and:
           totalErrorsOnPage
         );
 
+        console.log(`[BROWSING] Running interaction task on ${currentUrl}`);
         try {
-          await this.run(task, (update) => {
+          const runResult = await this.run(task, (update) => {
             onUpdate?.({
               type: update.type,
               data: { ...update.data, url: currentUrl, strategy: recoveryStrategy }
             });
           });
+          console.log(`[BROWSING] Task completed successfully: ${runResult?.slice(0, 100) || 'no result'}`);
 
           // Success!
           consecutiveErrors = 0;
@@ -1169,7 +1203,7 @@ Look for an input field for the verification code and:
 
         } catch (runError) {
           const errorMsg = runError instanceof Error ? runError.message : String(runError);
-          console.error(`Task run error (strategy: ${recoveryStrategy}, errors: ${totalErrorsOnPage}):`, errorMsg);
+          console.error(`[BROWSING] Task run error (strategy: ${recoveryStrategy}, errors: ${totalErrorsOnPage}):`, errorMsg);
           consecutiveErrors++;
           totalErrorsOnPage++;
           pageInsights.push(`Error: ${errorMsg.slice(0, 100)}`);
@@ -1190,7 +1224,9 @@ Look for an input field for the verification code and:
             try {
               await this.executeTool('take_screenshot', {});
               await this.sleep(1000);
-            } catch (e) {}
+            } catch (e) {
+              console.warn('[BROWSING] Screenshot failed:', e);
+            }
           } else if (totalErrorsOnPage === 7) {
             onUpdate?.({ type: 'info', data: { message: 'Switching to radical strategy: scroll, refresh, try different elements' } });
             try {
@@ -1199,7 +1235,9 @@ Look for an input field for the verification code and:
               await this.sleep(1000);
               await this.executeTool('scroll_page', { direction: 'up', amount: 200 });
               await this.sleep(500);
-            } catch (e) {}
+            } catch (e) {
+              console.warn('[BROWSING] Scroll recovery failed:', e);
+            }
           } else if (totalErrorsOnPage === 10) {
             onUpdate?.({ type: 'info', data: { message: 'Moving on after 10 errors - collecting insights and continuing' } });
           }
@@ -1218,7 +1256,7 @@ Look for an input field for the verification code and:
 
       } catch (loopError) {
         // Catch-all for any loop errors - NEVER let the loop exit
-        console.error('Loop error (continuing):', loopError);
+        console.error('[BROWSING] Loop error (continuing):', loopError);
         consecutiveErrors++;
         totalErrorsOnPage++;
         pageInsights.push(`Loop error: ${String(loopError).slice(0, 50)}`);
@@ -1228,10 +1266,21 @@ Look for an input field for the verification code and:
           data: { error: String(loopError), recovering: true, totalErrorsOnPage }
         });
         await this.sleep(2000);
+
+        // If we've had too many consecutive errors in the loop, take a longer break
+        if (consecutiveErrors > 20) {
+          console.log('[BROWSING] Too many consecutive errors, taking a longer break');
+          onUpdate?.({ type: 'info', data: { message: 'Taking a break due to multiple errors...' } });
+          await this.sleep(30000);
+          consecutiveErrors = 0;
+          // Reset to a new page
+          currentPageUrl = '';
+          interactionsOnCurrentPage = targetInteractions;
+        }
       }
     }
 
-    console.log('Browsing loop ended, status:', this.autonomousState.status);
+    console.log('[BROWSING] Browsing loop ended, status:', this.autonomousState.status);
   }
 
   // Do a Bing search based on persona interests
