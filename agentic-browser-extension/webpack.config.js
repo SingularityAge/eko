@@ -7,9 +7,7 @@ module.exports = {
     background: './src/background/index.ts',
     content: './src/content/index.ts',
     popup: './src/popup/index.tsx',
-    sidebar: './src/sidebar/index.tsx',
-    options: './src/popup/options.tsx',
-    inject: './src/content/inject.ts'
+    sidebar: './src/sidebar/index.tsx'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
@@ -30,21 +28,13 @@ module.exports = {
     ]
   },
   resolve: {
-    extensions: ['.tsx', '.ts', '.js'],
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-      '@shared': path.resolve(__dirname, 'src/shared'),
-      '@agents': path.resolve(__dirname, 'src/agents'),
-      '@services': path.resolve(__dirname, 'src/services'),
-      '@utils': path.resolve(__dirname, 'src/utils')
-    }
+    extensions: ['.tsx', '.ts', '.js']
   },
   plugins: [
     new CopyPlugin({
       patterns: [
         { from: 'manifest.json', to: 'manifest.json' },
-        { from: 'public/icons', to: 'icons', noErrorOnMissing: true },
-        { from: 'src/content/content.css', to: 'content.css' }
+        { from: 'public/icons', to: 'icons', noErrorOnMissing: true }
       ]
     }),
     new HtmlWebpackPlugin({
@@ -56,11 +46,6 @@ module.exports = {
       template: './src/sidebar/sidebar.html',
       filename: 'sidebar.html',
       chunks: ['sidebar']
-    }),
-    new HtmlWebpackPlugin({
-      template: './src/popup/options.html',
-      filename: 'options.html',
-      chunks: ['options']
     })
   ],
   optimization: {

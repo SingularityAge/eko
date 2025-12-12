@@ -1,540 +1,250 @@
 // ============================================
-// Content Script - Main Entry Point
-// Handles DOM interaction and human simulation
+// Content Script - Page Interaction
 // ============================================
 
-import {
-  buildDOMTree,
-  extractPageContent,
-  getPageState,
-  findElement,
-  scrollToElement,
-  waitForElement,
-  detectAuthForms,
-  detectEmailProvider
-} from '../utils/dom-utils';
-
-import {
-  MouseEmulator,
-  KeyboardEmulator,
-  ScrollEmulator,
-  sleep,
-  randomDelay,
-  thinkingPause,
-  createHumanSimulator
-} from '../utils/human-simulation';
-
-import { ExtensionMessage, DOMElement } from '../shared/types';
-
-// Helper to normalize URLs (add https:// if missing)
-function normalizeUrl(url: string): string {
-  if (!url) return url;
-
-  // Already has protocol
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
-  }
-
-  // Handle protocol-relative URLs
-  if (url.startsWith('//')) {
-    return 'https:' + url;
-  }
-
-  // Handle javascript: and other special protocols
-  if (url.includes(':') && !url.includes('.')) {
-    return url;
-  }
-
-  // Add https:// by default
-  return 'https://' + url;
+interface DOMElement {
+  index: number;
+  tag: string;
+  text: string;
+  type?: string;
+  placeholder?: string;
+  href?: string;
+  rect: { x: number; y: number; width: number; height: number };
 }
 
-// Global instances
-let mouseEmulator: MouseEmulator;
-let keyboardEmulator: KeyboardEmulator;
-let scrollEmulator: ScrollEmulator;
-let currentElements: DOMElement[] = [];
-let humanizationEnabled = true;
+// Build DOM tree of interactive elements
+function buildDOMTree(): { elements: DOMElement[]; domString: string } {
+  const elements: DOMElement[] = [];
+  const lines: string[] = [];
 
-// Initialize emulators
-function initializeEmulators(config?: { typingSpeed?: number; typoRate?: number }) {
-  const simulator = createHumanSimulator(config);
-  mouseEmulator = simulator.mouse;
-  keyboardEmulator = simulator.keyboard;
-  scrollEmulator = simulator.scroll;
-}
+  const interactiveSelectors = [
+    'a[href]',
+    'button',
+    'input',
+    'textarea',
+    'select',
+    '[role="button"]',
+    '[role="link"]',
+    '[onclick]',
+    '[tabindex]:not([tabindex="-1"])'
+  ];
 
-// Initialize on load
-initializeEmulators();
+  const allElements = document.querySelectorAll(interactiveSelectors.join(','));
+  let index = 0;
 
-// Message handler
-chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
-  handleMessage(message)
-    .then(result => sendResponse({ result }))
-    .catch(error => sendResponse({ error: error.message }));
+  allElements.forEach(el => {
+    const htmlEl = el as HTMLElement;
 
-  return true; // Keep channel open for async response
-});
+    // Skip hidden elements
+    if (htmlEl.offsetWidth === 0 && htmlEl.offsetHeight === 0) return;
+    const style = getComputedStyle(htmlEl);
+    if (style.display === 'none' || style.visibility === 'hidden') return;
 
-async function handleMessage(message: ExtensionMessage): Promise<any> {
-  switch (message.type) {
-    case 'PING':
-      return { status: 'ok', loaded: true };
+    const rect = htmlEl.getBoundingClientRect();
 
-    case 'GET_PAGE_STATE':
-      return getPageState();
+    // Skip elements outside viewport or too small
+    if (rect.width < 5 || rect.height < 5) return;
 
-    case 'EXTRACT_PAGE_CONTENT':
-      return extractPageContent();
+    const text = (htmlEl.innerText || htmlEl.getAttribute('aria-label') || htmlEl.getAttribute('title') || '').trim().slice(0, 100);
+    const tag = htmlEl.tagName.toLowerCase();
+    const type = htmlEl.getAttribute('type') || undefined;
+    const placeholder = htmlEl.getAttribute('placeholder') || undefined;
+    const href = htmlEl.getAttribute('href') || undefined;
 
-    case 'CLICK_ELEMENT':
-      return clickElement(message.payload);
-
-    case 'TYPE_TEXT':
-      return typeText(message.payload);
-
-    case 'SCROLL_PAGE':
-      return scrollPage(message.payload);
-
-    case 'SCROLL_TO_ELEMENT':
-      return scrollToElementAction(message.payload);
-
-    case 'HOVER_ELEMENT':
-      return hoverElement(message.payload);
-
-    case 'FILL_FORM':
-      return fillForm(message.payload);
-
-    case 'WAIT_FOR_ELEMENT':
-      return waitForElementAction(message.payload);
-
-    case 'NAVIGATE_TO':
-      // Use background script for navigation to avoid extension URL issues
-      chrome.runtime.sendMessage({
-        type: 'DO_NAVIGATE',
-        payload: { url: normalizeUrl(message.payload.url) }
-      });
-      return 'Navigating...';
-
-    case 'TAKE_SCREENSHOT':
-      return takeScreenshot();
-
-    case 'UPDATE_SETTINGS':
-      updateSettings(message.payload);
-      return 'Settings updated';
-
-    case 'EXECUTE_TOOL':
-      return executeTool(message.payload);
-
-    default:
-      throw new Error(`Unknown message type: ${message.type}`);
-  }
-}
-
-// Execute a tool action
-async function executeTool(payload: { tool: string; args: Record<string, any> }): Promise<string> {
-  const { tool, args } = payload;
-
-  switch (tool) {
-    case 'navigate_to':
-      const navUrl = normalizeUrl(args.url);
-      // Use background script for navigation
-      chrome.runtime.sendMessage({
-        type: 'DO_NAVIGATE',
-        payload: { url: navUrl }
-      });
-      return `Navigating to ${navUrl}`;
-
-    case 'click_element':
-      return clickElement({ index: args.index });
-
-    case 'type_text':
-      return typeText({
-        text: args.text,
-        pressEnter: args.press_enter
-      });
-
-    case 'scroll_page':
-      return scrollPage({
-        direction: args.direction,
-        amount: args.amount || 500
-      });
-
-    case 'wait':
-      await sleep(args.seconds * 1000);
-      return `Waited ${args.seconds} seconds`;
-
-    case 'extract_content':
-      return extractPageContent();
-
-    case 'get_page_info':
-      return JSON.stringify({
-        url: window.location.href,
-        title: document.title,
-        domain: window.location.hostname
-      });
-
-    case 'go_back':
-      window.history.back();
-      return 'Going back';
-
-    case 'refresh_page':
-      window.location.reload();
-      return 'Refreshing page';
-
-    case 'fill_form':
-      return fillForm({
-        elementIndex: args.element_index,
-        value: args.value
-      });
-
-    case 'hover_element':
-      return hoverElement({ index: args.index });
-
-    case 'search_google':
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(args.query)}`;
-      window.location.href = searchUrl;
-      return `Searching Google for: ${args.query}`;
-
-    case 'read_article':
-      return readArticle(args.duration_seconds);
-
-    case 'browse_feed':
-      return browseFeed(args.duration_seconds);
-
-    case 'complete':
-      return args.summary;
-
-    case 'click_at_position':
-      return clickAtPosition({ x: args.x, y: args.y });
-
-    default:
-      // Return DOM tree for unknown tools
-      const { domString } = buildDOMTree();
-      return `Unknown tool: ${tool}. Current page DOM:\n${domString}`;
-  }
-}
-
-// Click at specific x,y coordinates (fallback for when element indexes don't work)
-async function clickAtPosition(payload: { x: number; y: number }): Promise<string> {
-  const { x, y } = payload;
-
-  try {
-    // First scroll to make sure the position is visible
-    if (y > window.innerHeight) {
-      window.scrollTo({ top: y - window.innerHeight / 2, behavior: 'smooth' });
-      await sleep(500);
-    }
-
-    // Find element at position
-    const element = document.elementFromPoint(x, y);
-    if (!element) {
-      return `No element found at position (${x}, ${y})`;
-    }
-
-    // Simulate human-like click
-    const eventOptions = {
-      view: window,
-      bubbles: true,
-      cancelable: true,
-      clientX: x,
-      clientY: y,
-      button: 0
+    const elem: DOMElement = {
+      index,
+      tag,
+      text,
+      type,
+      placeholder,
+      href,
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
     };
 
-    // Fire mouse events sequence
-    element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-    await sleep(50 + Math.random() * 50);
-    element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-    element.dispatchEvent(new MouseEvent('click', eventOptions));
+    elements.push(elem);
 
-    // Try native click as well
-    if (element instanceof HTMLElement) {
-      element.click();
-    }
+    // Build readable string
+    let desc = `[${index}] <${tag}`;
+    if (type) desc += ` type="${type}"`;
+    if (placeholder) desc += ` placeholder="${placeholder}"`;
+    if (href) desc += ` href="${href.slice(0, 50)}"`;
+    desc += `>`;
+    if (text) desc += ` "${text.slice(0, 50)}"`;
+    lines.push(desc);
 
-    const tagName = element.tagName.toLowerCase();
-    const text = (element as HTMLElement).innerText?.slice(0, 50) || '';
-    return `Clicked at (${x}, ${y}) on <${tagName}>${text ? `: "${text}"` : ''}`;
-  } catch (error) {
-    return `Click at position failed: ${error instanceof Error ? error.message : String(error)}`;
-  }
+    index++;
+  });
+
+  return { elements, domString: lines.join('\n') };
 }
 
-// Click on an element by index
-async function clickElement(payload: { index: number }): Promise<string> {
-  // Rebuild DOM tree to get fresh positions
+// Get page state
+function getPageState(): { url: string; title: string; elements: string } {
+  const { domString } = buildDOMTree();
+  return {
+    url: window.location.href,
+    title: document.title,
+    elements: domString
+  };
+}
+
+// Click element by index
+async function clickElement(index: number): Promise<string> {
   const { elements } = buildDOMTree();
-  currentElements = elements;
+  const elem = elements[index];
 
-  const element = elements[payload.index];
-  if (!element) {
-    throw new Error(`Element with index ${payload.index} not found`);
+  if (!elem) {
+    return `Error: Element [${index}] not found`;
   }
 
-  const centerX = element.rect.x + element.rect.width / 2;
-  const centerY = element.rect.y + element.rect.height / 2;
+  const x = elem.rect.x + elem.rect.width / 2;
+  const y = elem.rect.y + elem.rect.height / 2;
 
-  // Scroll element into view if needed
-  if (centerY < 0 || centerY > window.innerHeight) {
-    const domElement = findElement(payload.index, elements);
-    if (domElement) {
-      scrollToElement(domElement);
-      await sleep(500);
-    }
+  // Scroll into view if needed
+  if (y < 0 || y > window.innerHeight) {
+    window.scrollTo({ top: y - window.innerHeight / 2, behavior: 'smooth' });
+    await sleep(300);
   }
 
-  if (humanizationEnabled) {
-    // Simulate human-like mouse movement and click
-    await thinkingPause();
-    await mouseEmulator.click(centerX, centerY);
-  } else {
-    // Direct click
-    const domElement = findElement(payload.index, elements);
-    if (domElement) {
-      (domElement as HTMLElement).click();
-    }
+  const target = document.elementFromPoint(x, y) as HTMLElement;
+  if (!target) {
+    return `Error: Could not find element at position (${x}, ${y})`;
   }
 
-  await sleep(300);
+  // Simulate human-like click
+  target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
+  await sleep(50 + Math.random() * 50);
+  target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
+  target.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
 
-  return `Clicked element [${payload.index}]: ${element.tagName} "${element.text.slice(0, 50)}"`;
+  // Also try native click
+  if (typeof target.click === 'function') {
+    target.click();
+  }
+
+  return `Clicked [${index}] <${elem.tag}> "${elem.text.slice(0, 30)}"`;
 }
 
 // Type text into focused element
-async function typeText(payload: { text: string; pressEnter?: boolean }): Promise<string> {
-  const activeElement = document.activeElement as HTMLElement;
+async function typeText(text: string, pressEnter: boolean = false): Promise<string> {
+  const active = document.activeElement as HTMLInputElement | HTMLTextAreaElement;
 
-  if (!activeElement || activeElement === document.body) {
-    throw new Error('No element is focused. Click on an input field first.');
+  if (!active || active === document.body) {
+    return 'Error: No element focused. Click on an input first.';
   }
 
-  if (humanizationEnabled) {
-    await thinkingPause();
-    await keyboardEmulator.type(activeElement, payload.text, {
-      pressEnter: payload.pressEnter,
-      withTypos: true
-    });
-  } else {
-    // Direct input
-    if (activeElement instanceof HTMLInputElement ||
-        activeElement instanceof HTMLTextAreaElement) {
-      activeElement.value = payload.text;
-      activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+  // Clear existing value
+  active.value = '';
+  active.dispatchEvent(new Event('input', { bubbles: true }));
 
-      if (payload.pressEnter) {
-        activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-        const form = activeElement.closest('form');
-        if (form) form.submit();
+  // Type character by character with human-like delays
+  for (const char of text) {
+    active.value += char;
+    active.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+    active.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+    active.dispatchEvent(new Event('input', { bubbles: true }));
+    active.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
+    await sleep(30 + Math.random() * 70); // 30-100ms per character
+  }
+
+  if (pressEnter) {
+    await sleep(100);
+    active.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+    active.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', bubbles: true }));
+    active.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
+
+    // Submit form if exists
+    const form = active.closest('form');
+    if (form) {
+      form.dispatchEvent(new Event('submit', { bubbles: true }));
+    }
+  }
+
+  return `Typed "${text.slice(0, 30)}${text.length > 30 ? '...' : ''}"${pressEnter ? ' and pressed Enter' : ''}`;
+}
+
+// Scroll page
+async function scrollPage(direction: 'up' | 'down', amount: number = 500): Promise<string> {
+  const delta = direction === 'down' ? amount : -amount;
+
+  // Smooth scroll with slight randomization
+  const steps = 5;
+  const stepAmount = delta / steps;
+
+  for (let i = 0; i < steps; i++) {
+    window.scrollBy({ top: stepAmount + (Math.random() * 20 - 10), behavior: 'auto' });
+    await sleep(20 + Math.random() * 30);
+  }
+
+  return `Scrolled ${direction} ${amount}px`;
+}
+
+// Wait/sleep
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Extract page content
+function extractContent(): string {
+  const article = document.querySelector('article');
+  const main = document.querySelector('main');
+  const content = article || main || document.body;
+
+  // Get text content, clean up whitespace
+  let text = content.innerText || '';
+  text = text.replace(/\s+/g, ' ').trim();
+  return text.slice(0, 10000);
+}
+
+// Message handler
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  (async () => {
+    try {
+      const { type, payload } = message;
+
+      switch (type) {
+        case 'PING':
+          sendResponse({ ok: true });
+          break;
+
+        case 'GET_PAGE_STATE':
+          sendResponse(getPageState());
+          break;
+
+        case 'CLICK':
+          const clickResult = await clickElement(payload.index);
+          sendResponse({ result: clickResult });
+          break;
+
+        case 'TYPE':
+          const typeResult = await typeText(payload.text, payload.pressEnter);
+          sendResponse({ result: typeResult });
+          break;
+
+        case 'SCROLL':
+          const scrollResult = await scrollPage(payload.direction, payload.amount);
+          sendResponse({ result: scrollResult });
+          break;
+
+        case 'EXTRACT_CONTENT':
+          sendResponse({ content: extractContent() });
+          break;
+
+        case 'WAIT':
+          await sleep(payload.ms || 1000);
+          sendResponse({ result: `Waited ${payload.ms || 1000}ms` });
+          break;
+
+        default:
+          sendResponse({ error: `Unknown message type: ${type}` });
       }
+    } catch (error) {
+      console.error('[CONTENT] Error:', error);
+      sendResponse({ error: error instanceof Error ? error.message : String(error) });
     }
-  }
+  })();
 
-  return `Typed: "${payload.text.slice(0, 50)}${payload.text.length > 50 ? '...' : ''}"`;
-}
+  return true; // Keep channel open for async
+});
 
-// Scroll the page
-async function scrollPage(payload: { direction: 'up' | 'down'; amount?: number }): Promise<string> {
-  const amount = payload.amount || 500;
-  const delta = payload.direction === 'down' ? amount : -amount;
-
-  if (humanizationEnabled) {
-    await scrollEmulator.scrollBy(delta, 'medium');
-  } else {
-    window.scrollBy(0, delta);
-  }
-
-  return `Scrolled ${payload.direction} by ${amount}px`;
-}
-
-// Scroll to a specific element
-async function scrollToElementAction(payload: { index: number }): Promise<string> {
-  const { elements } = buildDOMTree();
-  const element = findElement(payload.index, elements);
-
-  if (!element) {
-    throw new Error(`Element with index ${payload.index} not found`);
-  }
-
-  if (humanizationEnabled) {
-    await scrollEmulator.scrollToElement(element, 'medium');
-  } else {
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-
-  await sleep(500);
-
-  return `Scrolled to element [${payload.index}]`;
-}
-
-// Hover over an element
-async function hoverElement(payload: { index: number }): Promise<string> {
-  const { elements } = buildDOMTree();
-  const element = elements[payload.index];
-
-  if (!element) {
-    throw new Error(`Element with index ${payload.index} not found`);
-  }
-
-  const centerX = element.rect.x + element.rect.width / 2;
-  const centerY = element.rect.y + element.rect.height / 2;
-
-  if (humanizationEnabled) {
-    await mouseEmulator.hover(centerX, centerY, 1000);
-  } else {
-    const domElement = findElement(payload.index, elements);
-    if (domElement) {
-      domElement.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-      domElement.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-    }
-  }
-
-  return `Hovered over element [${payload.index}]`;
-}
-
-// Fill a form field
-async function fillForm(payload: { elementIndex: number; value: string }): Promise<string> {
-  // Click on the element first
-  await clickElement({ index: payload.elementIndex });
-  await sleep(200);
-
-  // Type the value
-  await typeText({ text: payload.value });
-
-  return `Filled form field [${payload.elementIndex}] with "${payload.value.slice(0, 30)}..."`;
-}
-
-// Wait for an element to appear
-async function waitForElementAction(payload: { selector: string; timeout?: number }): Promise<string> {
-  const element = await waitForElement(payload.selector, payload.timeout || 10000);
-
-  if (element) {
-    return `Element found: ${payload.selector}`;
-  } else {
-    throw new Error(`Element not found within timeout: ${payload.selector}`);
-  }
-}
-
-// Take a screenshot (returns base64)
-async function takeScreenshot(): Promise<string> {
-  // Screenshots are taken by the background script using chrome.tabs API
-  // This just signals the request
-  return 'Screenshot requested - handled by background script';
-}
-
-// Update content script settings
-function updateSettings(settings: any): void {
-  if (settings.humanization !== undefined) {
-    humanizationEnabled = settings.humanization.enabled;
-
-    if (settings.humanization.typingSpeed) {
-      keyboardEmulator.setTypingSpeed(settings.humanization.typingSpeed);
-    }
-    if (settings.humanization.typoRate !== undefined) {
-      keyboardEmulator.setTypoRate(settings.humanization.typoRate);
-    }
-  }
-}
-
-// Simulate reading an article
-async function readArticle(durationSeconds: number): Promise<string> {
-  const duration = Math.min(120, Math.max(10, durationSeconds)) * 1000;
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < duration) {
-    // Random scroll
-    const scrollAmount = 100 + Math.random() * 200;
-    await scrollEmulator.scrollBy(scrollAmount, 'slow');
-
-    // Random pause (simulating reading)
-    const readPause = 2000 + Math.random() * 4000;
-    await sleep(readPause);
-
-    // Occasional scroll back (re-reading)
-    if (Math.random() < 0.15) {
-      await scrollEmulator.scrollBy(-scrollAmount * 0.5, 'slow');
-      await sleep(1000 + Math.random() * 1000);
-    }
-  }
-
-  const actualDuration = Math.round((Date.now() - startTime) / 1000);
-  return `Read article for ${actualDuration} seconds`;
-}
-
-// Simulate browsing a feed (social media, news, etc.)
-async function browseFeed(durationSeconds: number): Promise<string> {
-  const duration = Math.min(300, Math.max(30, durationSeconds)) * 1000;
-  const startTime = Date.now();
-  let scrollCount = 0;
-
-  while (Date.now() - startTime < duration) {
-    // Scroll through feed
-    const scrollAmount = 300 + Math.random() * 400;
-    await scrollEmulator.scrollBy(scrollAmount, 'medium');
-    scrollCount++;
-
-    // Pause to view content
-    const viewPause = 1500 + Math.random() * 3500;
-    await sleep(viewPause);
-
-    // Occasionally pause longer (engaging with content)
-    if (Math.random() < 0.1) {
-      await sleep(3000 + Math.random() * 5000);
-    }
-
-    // Rarely scroll up (checking something again)
-    if (Math.random() < 0.05) {
-      await scrollEmulator.scrollBy(-scrollAmount * 2, 'medium');
-      await sleep(2000);
-    }
-  }
-
-  const actualDuration = Math.round((Date.now() - startTime) / 1000);
-  return `Browsed feed for ${actualDuration} seconds (${scrollCount} scrolls)`;
-}
-
-// Auto-detect and report page info on load
-function reportPageInfo(): void {
-  const pageInfo = {
-    url: window.location.href,
-    title: document.title,
-    domain: window.location.hostname,
-    authForm: detectAuthForms(),
-    emailProvider: detectEmailProvider(window.location.href)
-  };
-
-  chrome.runtime.sendMessage({
-    type: 'ACTIVITY_LOG',
-    payload: {
-      type: 'page_visit',
-      url: pageInfo.url,
-      title: pageInfo.title,
-      details: pageInfo,
-      timestamp: Date.now()
-    }
-  }).catch(() => {
-    // Ignore if background not ready
-  });
-}
-
-// Initial page report
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', reportPageInfo);
-} else {
-  reportPageInfo();
-}
-
-// Report on navigation
-window.addEventListener('popstate', reportPageInfo);
-
-// Expose functions for debugging
-(window as any).__agenticBrowser = {
-  getPageState,
-  buildDOMTree,
-  extractPageContent,
-  clickElement,
-  typeText,
-  scrollPage
-};
-
-console.log('Agentic Browser content script loaded');
+console.log('[AUTOBROWSER] Content script loaded');

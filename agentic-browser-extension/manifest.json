@@ -1,20 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Agentic Browser - Authentic Web Simulation",
+  "name": "AutoBrowser",
   "version": "1.0.0",
-  "description": "AI-powered browsing agent that simulates authentic young US citizen web behavior",
+  "description": "Autonomous browser that browses the web naturally like a human",
   "permissions": [
     "tabs",
     "activeTab",
     "storage",
     "scripting",
-    "alarms",
-    "notifications",
     "webNavigation",
-    "cookies",
-    "history",
-    "bookmarks",
-    "identity",
     "sidePanel"
   ],
   "host_permissions": [
@@ -28,7 +22,6 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "css": ["content.css"],
       "run_at": "document_idle",
       "all_frames": false
     }
@@ -40,7 +33,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Open Agentic Browser Panel"
+    "default_title": "AutoBrowser"
   },
   "side_panel": {
     "default_path": "sidebar.html"
@@ -51,14 +44,5 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "options_page": "options.html",
-  "web_accessible_resources": [
-    {
-      "resources": ["inject.js"],
-      "matches": ["<all_urls>"]
-    }
-  ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
-  }
+  "options_page": "popup.html"
 }
