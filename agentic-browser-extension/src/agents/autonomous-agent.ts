@@ -814,33 +814,72 @@ Look for an input field for the verification code and:
     });
   }
 
+  // Safe wrapper for onUpdate callback - never throws
+  private safeUpdate(
+    onUpdate: ((update: { type: string; data: any }) => void) | undefined,
+    type: string,
+    data: any
+  ): void {
+    try {
+      onUpdate?.({ type, data });
+    } catch (e) {
+      console.warn('[AUTONOMOUS] onUpdate callback error:', e);
+    }
+  }
+
   // Main autonomous loop
   async startAutonomous(
     onUpdate?: (update: { type: string; data: any }) => void
   ): Promise<void> {
-    console.log('[AUTONOMOUS] startAutonomous called, current status:', this.autonomousState.status);
+    console.log('[AUTONOMOUS] ========================================');
+    console.log('[AUTONOMOUS] startAutonomous called');
+    console.log('[AUTONOMOUS] Current status:', this.autonomousState.status);
+    console.log('[AUTONOMOUS] ========================================');
 
     if (this.autonomousState.status === 'running') {
       console.log('[AUTONOMOUS] Already running, skipping');
       return;
     }
 
-    this.autonomousState = this.createInitialState();
-    this.autonomousState.status = 'running';
-    this.state.status = 'running';
+    // Initialize state
+    try {
+      this.autonomousState = this.createInitialState();
+      this.autonomousState.status = 'running';
+      this.state.status = 'running';
+      console.log('[AUTONOMOUS] Status set to running');
+    } catch (e) {
+      console.error('[AUTONOMOUS] Failed to initialize state:', e);
+      // Force state anyway
+      this.autonomousState = {
+        status: 'running',
+        currentPhase: 'discovering',
+        discoveredUrls: [],
+        visitedUrls: new Set(),
+        emailVerificationPending: false,
+        emailCheckScheduledAt: null,
+        emailVerificationContext: null,
+        sessionStartTime: Date.now(),
+        actionsThisSession: 0,
+        openedTabIds: [],
+        lastTabCleanup: Date.now(),
+        mainTabId: null
+      };
+    }
 
-    console.log('[AUTONOMOUS] Status set to running');
-
-    // Ensure credentials store is initialized
+    // Ensure credentials store is initialized (non-blocking)
     try {
       await this.credentialsStore.initialize();
       console.log('[AUTONOMOUS] Credentials store initialized');
     } catch (e) {
-      console.warn('[AUTONOMOUS] Failed to initialize credentials store:', e);
+      console.warn('[AUTONOMOUS] Credentials store init failed (continuing):', e);
     }
 
     // Start tab cleanup schedule
-    this.scheduleTabCleanup();
+    try {
+      this.scheduleTabCleanup();
+    } catch (e) {
+      console.warn('[AUTONOMOUS] Tab cleanup schedule failed:', e);
+    }
 
     // Remember main tab
     try {
@@ -853,83 +892,116 @@ Look for an input field for the verification code and:
       console.warn('[AUTONOMOUS] Failed to get active tab:', e);
     }
 
-    onUpdate?.({
-      type: 'status',
-      data: { status: 'running', phase: 'discovering' }
-    });
+    this.safeUpdate(onUpdate, 'status', { status: 'running', phase: 'discovering' });
+
+    console.log('[AUTONOMOUS] Entering main infinite loop...');
 
     // MAIN LOOP - Keep running FOREVER until explicitly stopped
-    // This is the outer infinite loop that should never exit on its own
     let loopIteration = 0;
+
+    // eslint-disable-next-line no-constant-condition
     while (true) {
-      // Check if we should stop
+      loopIteration++;
+      console.log(`[AUTONOMOUS] ======= Main loop iteration ${loopIteration} =======`);
+
+      // Check if we should stop FIRST
       if (this.autonomousState.status !== 'running') {
-        console.log('[AUTONOMOUS] Status changed to:', this.autonomousState.status, '- exiting main loop');
+        console.log('[AUTONOMOUS] Status is not running:', this.autonomousState.status);
+        console.log('[AUTONOMOUS] Breaking out of main loop');
         break;
       }
 
-      loopIteration++;
-      console.log(`[AUTONOMOUS] Main loop iteration ${loopIteration}`);
-
       try {
         // Phase 1: Discover starting URLs
-        this.autonomousState.currentPhase = 'discovering';
-        onUpdate?.({ type: 'phase', data: { phase: 'discovering' } });
         console.log('[AUTONOMOUS] Phase 1: Discovering URLs...');
+        this.autonomousState.currentPhase = 'discovering';
+        this.safeUpdate(onUpdate, 'phase', { phase: 'discovering' });
 
         let urls: string[] = [];
+
         try {
           urls = await this.discoverStartingUrls();
-          console.log(`[AUTONOMOUS] Discovered ${urls.length} URLs`);
-        } catch (error) {
-          console.error('[AUTONOMOUS] Error discovering URLs:', error);
-          onUpdate?.({ type: 'warning', data: { message: 'URL discovery failed, using fallback URLs' } });
+          console.log(`[AUTONOMOUS] Discovered ${urls?.length || 0} URLs`);
+        } catch (discoverError) {
+          console.error('[AUTONOMOUS] URL discovery error:', discoverError);
+          this.safeUpdate(onUpdate, 'warning', { message: 'URL discovery failed, using fallback URLs' });
         }
 
-        // Always have some URLs to browse - use fallbacks if discovery failed
+        // Always have URLs - use fallbacks if needed
         if (!urls || urls.length === 0) {
+          console.log('[AUTONOMOUS] No URLs discovered, using fallbacks');
           urls = this.getFallbackUrls();
-          console.log(`[AUTONOMOUS] Using ${urls.length} fallback URLs`);
-          onUpdate?.({ type: 'info', data: { message: 'Using fallback URLs for browsing' } });
+          console.log(`[AUTONOMOUS] Fallback URLs: ${urls.length}`);
+          this.safeUpdate(onUpdate, 'info', { message: `Using ${urls.length} fallback URLs for browsing` });
         }
 
-        console.log('[AUTONOMOUS] Starting browsing with URLs:', urls.slice(0, 5));
+        // Extra safety - if still no URLs, create hardcoded ones
+        if (!urls || urls.length === 0) {
+          console.log('[AUTONOMOUS] EMERGENCY: No URLs at all, using hardcoded');
+          urls = ['https://www.bing.com', 'https://www.reddit.com', 'https://www.youtube.com'];
+        }
+
+        console.log('[AUTONOMOUS] URLs to browse:', urls.slice(0, 3));
 
         // Phase 2: Start browsing loop
+        console.log('[AUTONOMOUS] Phase 2: Starting browsing loop...');
         this.autonomousState.currentPhase = 'browsing';
-        onUpdate?.({ type: 'phase', data: { phase: 'browsing', urls } });
+        this.safeUpdate(onUpdate, 'phase', { phase: 'browsing', urlCount: urls.length });
 
         try {
           await this.browsingLoop(urls, onUpdate);
-          console.log('[AUTONOMOUS] browsingLoop returned normally');
+          console.log('[AUTONOMOUS] browsingLoop completed normally');
         } catch (browsingError) {
-          console.error('[AUTONOMOUS] browsingLoop threw error:', browsingError);
-          // Don't rethrow - continue to next iteration
+          console.error('[AUTONOMOUS] browsingLoop error:', browsingError);
+          this.safeUpdate(onUpdate, 'error', {
+            error: browsingError instanceof Error ? browsingError.message : String(browsingError),
+            recovering: true
+          });
         }
 
-        // If still running, continue with new URLs after a delay
+        // After browsingLoop, check if we should continue
         if (this.autonomousState.status === 'running') {
-          console.log('[AUTONOMOUS] Continuing to next iteration...');
+          console.log('[AUTONOMOUS] Still running, will restart loop after delay...');
           await this.sleep(3000);
+        } else {
+          console.log('[AUTONOMOUS] Status changed, will exit loop');
         }
 
-      } catch (error) {
-        console.error('[AUTONOMOUS] Outer loop error (will retry):', error);
-        onUpdate?.({
-          type: 'error',
-          data: { error: error instanceof Error ? error.message : String(error), recovering: true }
+      } catch (outerError) {
+        // This catches ANY error in the iteration
+        console.error('[AUTONOMOUS] OUTER LOOP ERROR:', outerError);
+        this.safeUpdate(onUpdate, 'error', {
+          error: outerError instanceof Error ? outerError.message : String(outerError),
+          recovering: true,
+          iteration: loopIteration
         });
 
-        // Wait before retrying - but don't exit the loop!
+        // Wait and continue - NEVER exit the loop on error
+        console.log('[AUTONOMOUS] Waiting 5s before retry...');
         await this.sleep(5000);
+      }
+
+      // Extra safety check - if we've been looping for a while without issues, log it
+      if (loopIteration % 10 === 0) {
+        console.log(`[AUTONOMOUS] Checkpoint: ${loopIteration} iterations completed`);
       }
     }
 
-    // Clean up when done
-    console.log('[AUTONOMOUS] startAutonomous exiting, final status:', this.autonomousState.status);
-    if (this.tabCleanupInterval) {
-      clearInterval(this.tabCleanupInterval);
-      this.tabCleanupInterval = null;
+    // We only get here if we explicitly broke out of the loop
+    console.log('[AUTONOMOUS] ========================================');
+    console.log('[AUTONOMOUS] Exited main loop');
+    console.log('[AUTONOMOUS] Final status:', this.autonomousState.status);
+    console.log('[AUTONOMOUS] Total iterations:', loopIteration);
+    console.log('[AUTONOMOUS] ========================================');
+
+    // Cleanup
+    try {
+      if (this.tabCleanupInterval) {
+        clearInterval(this.tabCleanupInterval);
+        this.tabCleanupInterval = null;
+      }
+    } catch (e) {
+      console.warn('[AUTONOMOUS] Cleanup error:', e);
     }
   }
 
@@ -977,13 +1049,20 @@ Look for an input field for the verification code and:
     const emailCheckInterval = 15 * 60 * 1000; // Check email every ~15 minutes
     let browsingIteration = 0;
 
-    console.log('[BROWSING] Starting browsing loop with', urls.length, 'URLs');
+    console.log('[BROWSING] ========================================');
+    console.log('[BROWSING] Starting browsing loop');
+    console.log('[BROWSING] URLs count:', urls.length);
     console.log('[BROWSING] Status:', this.autonomousState.status);
+    console.log('[BROWSING] ========================================');
 
     // Inner browsing loop - keep going as long as we're running
     while (this.autonomousState.status === 'running') {
       browsingIteration++;
-      console.log(`[BROWSING] Iteration ${browsingIteration}, page interactions: ${interactionsOnCurrentPage}/${targetInteractions}`);
+
+      // Log every iteration
+      if (browsingIteration <= 5 || browsingIteration % 10 === 0) {
+        console.log(`[BROWSING] Iteration ${browsingIteration}, interactions: ${interactionsOnCurrentPage}/${targetInteractions}, URL: ${currentPageUrl || 'none'}`);
+      }
       try {
         if (this.state.status === 'paused') {
           await this.sleep(1000);
