@@ -184,6 +184,73 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Click at specific coordinates (for vision mode)
+async function clickAtCoordinates(x: number, y: number): Promise<string> {
+  // Scroll into view if needed
+  if (y < 0 || y > window.innerHeight) {
+    window.scrollTo({ top: window.scrollY + y - window.innerHeight / 2, behavior: 'smooth' });
+    await sleep(300);
+  }
+
+  const target = document.elementFromPoint(x, y) as HTMLElement;
+  if (!target) {
+    return `Error: No element found at coordinates (${x}, ${y})`;
+  }
+
+  // Simulate human-like click
+  target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
+  await sleep(50 + Math.random() * 50);
+  target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
+  target.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
+
+  // Also try native click
+  if (typeof target.click === 'function') {
+    target.click();
+  }
+
+  return `Clicked at coordinates (${x}, ${y}) on <${target.tagName.toLowerCase()}>`;
+}
+
+// Press a key (for closing popups, overlays, etc.)
+async function pressKey(key: string): Promise<string> {
+  const keyMap: Record<string, { key: string; code: string; keyCode: number }> = {
+    'Escape': { key: 'Escape', code: 'Escape', keyCode: 27 },
+    'Enter': { key: 'Enter', code: 'Enter', keyCode: 13 },
+    'Tab': { key: 'Tab', code: 'Tab', keyCode: 9 },
+    'Space': { key: ' ', code: 'Space', keyCode: 32 },
+    'ArrowUp': { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
+    'ArrowDown': { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
+    'ArrowLeft': { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
+    'ArrowRight': { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
+  };
+
+  const keyInfo = keyMap[key] || { key, code: key, keyCode: 0 };
+  const target = document.activeElement || document.body;
+
+  // Dispatch key events
+  target.dispatchEvent(new KeyboardEvent('keydown', {
+    key: keyInfo.key,
+    code: keyInfo.code,
+    keyCode: keyInfo.keyCode,
+    which: keyInfo.keyCode,
+    bubbles: true,
+    cancelable: true
+  }));
+
+  await sleep(50);
+
+  target.dispatchEvent(new KeyboardEvent('keyup', {
+    key: keyInfo.key,
+    code: keyInfo.code,
+    keyCode: keyInfo.keyCode,
+    which: keyInfo.keyCode,
+    bubbles: true,
+    cancelable: true
+  }));
+
+  return `Pressed key: ${key}`;
+}
+
 // Extract page content
 function extractContent(): string {
   const article = document.querySelector('article');
@@ -233,6 +300,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'WAIT':
           await sleep(payload.ms || 1000);
           sendResponse({ result: `Waited ${payload.ms || 1000}ms` });
+          break;
+
+        case 'CLICK_COORDINATES':
+          const coordResult = await clickAtCoordinates(payload.x, payload.y);
+          sendResponse({ result: coordResult });
+          break;
+
+        case 'PRESS_KEY':
+          const keyResult = await pressKey(payload.key);
+          sendResponse({ result: keyResult });
           break;
 
         default:

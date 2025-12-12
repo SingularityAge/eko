@@ -1,10 +1,11 @@
 // ============================================
 // Autonomous Browser Agent - Core Logic
+// With vision fallback, tab management, popup handling
 // ============================================
 
 import { getOpenRouter, OpenRouterService } from './openrouter';
-import { getSettings, getCredentials, getCredentialByDomain, saveCredential, logActivity, extractDomain } from './storage';
-import { Tool, ToolCall, LLMMessage, Persona, BrowserState, Credential } from '../shared/types';
+import { getSettings, getCredentials, getCredentialByDomain, logActivity, extractDomain } from './storage';
+import { Tool, LLMMessage, Persona, BrowserState, Credential } from '../shared/types';
 
 // Browser tools the agent can use
 const TOOLS: Tool[] = [
@@ -19,6 +20,21 @@ const TOOLS: Tool[] = [
           index: { type: 'number', description: 'Element index from the DOM tree' }
         },
         required: ['index']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'click_coordinates',
+      description: 'Click at specific x,y coordinates on the page (use when element indexes fail)',
+      parameters: {
+        type: 'object',
+        properties: {
+          x: { type: 'number', description: 'X coordinate' },
+          y: { type: 'number', description: 'Y coordinate' }
+        },
+        required: ['x', 'y']
       }
     }
   },
@@ -69,6 +85,14 @@ const TOOLS: Tool[] = [
   {
     type: 'function',
     function: {
+      name: 'press_escape',
+      description: 'Press Escape key to close popups, overlays, or modals',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'wait',
       description: 'Wait for a moment',
       parameters: {
@@ -98,7 +122,7 @@ const TOOLS: Tool[] = [
     type: 'function',
     function: {
       name: 'done',
-      description: 'Mark current task as complete and move on',
+      description: 'Mark current task as complete and move on to another site',
       parameters: {
         type: 'object',
         properties: {
@@ -121,12 +145,18 @@ export class AutonomousBrowserAgent {
   private visitedUrls: Set<string> = new Set();
   private onStateChange: ((state: BrowserState) => void) | null = null;
 
-  // Context management for long-running sessions
+  // Context management
   private conversationHistory: LLMMessage[] = [];
   private sessionSummary: string = '';
   private totalTokensEstimate: number = 0;
   private readonly TOKEN_LIMIT: number = 10000;
-  private readonly CHARS_PER_TOKEN: number = 4; // Approximate
+  private readonly CHARS_PER_TOKEN: number = 4;
+
+  // Vision fallback tracking
+  private lastPageState: string = '';
+  private sameStateCount: number = 0;
+  private consecutiveFailures: number = 0;
+  private useVisionMode: boolean = false;
 
   constructor() {
     this.llm = getOpenRouter();
@@ -163,7 +193,6 @@ export class AutonomousBrowserAgent {
     console.log('[AGENT] Starting autonomous browsing');
     console.log('[AGENT] ========================================');
 
-    // Load settings
     const settings = await getSettings();
     if (!settings.openRouterApiKey) {
       this.updateState({ status: 'idle', currentAction: 'Error: No API key configured' });
@@ -175,27 +204,32 @@ export class AutonomousBrowserAgent {
     this.persona = settings.persona;
     this.running = true;
     this.visitedUrls.clear();
+    this.useVisionMode = false;
+    this.consecutiveFailures = 0;
 
     this.updateState({ status: 'running', currentAction: 'Initializing...', totalActions: 0, errors: 0 });
 
-    // Get or create a tab
+    // Get or create a tab and ensure focus
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       this.tabId = activeTab?.id || null;
 
       if (!this.tabId) {
-        const newTab = await chrome.tabs.create({ url: 'https://www.bing.com' });
+        const newTab = await chrome.tabs.create({ url: 'https://www.bing.com', active: true });
         this.tabId = newTab.id || null;
+      }
+
+      // Ensure our tab is focused
+      if (this.tabId) {
+        await this.focusTab();
       }
     } catch (e) {
       console.warn('[AGENT] Tab setup error:', e);
     }
 
-    // Discover URLs
     this.updateState({ currentAction: 'Discovering interesting URLs...' });
     await this.discoverUrls();
 
-    // Main browsing loop
     await this.browsingLoop();
   }
 
@@ -215,14 +249,42 @@ export class AutonomousBrowserAgent {
     }
   }
 
+  // Focus the active tab
+  private async focusTab(): Promise<void> {
+    if (!this.tabId) return;
+    try {
+      await chrome.runtime.sendMessage({ type: 'FOCUS_TAB', payload: { tabId: this.tabId } });
+    } catch (e) {
+      console.warn('[AGENT] Focus tab error:', e);
+    }
+  }
+
+  // Track tab for cleanup (called when opening new tabs)
+  private async trackTabForCleanup(tabId: number): Promise<void> {
+    try {
+      await chrome.runtime.sendMessage({ type: 'TRACK_TAB', payload: { tabId } });
+    } catch (e) {
+      console.warn('[AGENT] Track tab error:', e);
+    }
+  }
+
+  // Take screenshot for vision analysis
+  private async takeScreenshot(): Promise<string | null> {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'TAKE_SCREENSHOT' });
+      return response?.screenshot || null;
+    } catch (e) {
+      console.warn('[AGENT] Screenshot error:', e);
+      return null;
+    }
+  }
+
   private async discoverUrls(): Promise<void> {
     console.log('[AGENT] Discovering URLs...');
 
-    // Start with credential sites (sites we have accounts on)
     const credentials = await getCredentials();
     const credentialUrls = credentials.map(c => c.url);
 
-    // Default fallback URLs
     const defaultUrls = [
       'https://www.bing.com',
       'https://www.reddit.com',
@@ -231,7 +293,6 @@ export class AutonomousBrowserAgent {
       'https://www.wikipedia.org'
     ];
 
-    // Add persona favorites if available
     let personaUrls: string[] = [];
     if (this.persona?.favoriteSites) {
       personaUrls = this.persona.favoriteSites.map(s =>
@@ -239,22 +300,15 @@ export class AutonomousBrowserAgent {
       );
     }
 
-    // Try Perplexity search for more URLs
     if (this.persona) {
       try {
         const query = `Find popular websites for someone interested in: ${this.persona.interests.join(', ')}. List 5-10 relevant website URLs.`;
         const result = await this.llm.searchWithPerplexity(query);
 
-        // Extract URLs from response
         const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
         const matches = result.match(urlRegex) || [];
         const discovered = matches.filter(url => {
-          try {
-            new URL(url);
-            return true;
-          } catch {
-            return false;
-          }
+          try { new URL(url); return true; } catch { return false; }
         });
 
         console.log('[AGENT] Perplexity found:', discovered.length, 'URLs');
@@ -275,16 +329,21 @@ export class AutonomousBrowserAgent {
     let consecutiveErrors = 0;
 
     while (this.running) {
-      // Check if paused
       if (this.state.status === 'paused') {
         await this.sleep(1000);
         continue;
       }
 
       try {
-        // Pick next URL if we need one
+        // Ensure focus on our tab
+        await this.focusTab();
+
+        // Navigate to next URL if needed
         if (!this.state.currentUrl || Math.random() < 0.15) {
           await this.navigateToNextUrl();
+          this.useVisionMode = false;
+          this.consecutiveFailures = 0;
+          this.sameStateCount = 0;
         }
 
         // Get page state
@@ -294,21 +353,57 @@ export class AutonomousBrowserAgent {
           continue;
         }
 
+        // Check for stuck state (same page state 3+ times)
+        const stateHash = `${pageState.url}:${pageState.elements.slice(0, 500)}`;
+        if (stateHash === this.lastPageState) {
+          this.sameStateCount++;
+          if (this.sameStateCount >= 3) {
+            console.log('[AGENT] Stuck state detected, switching to vision mode');
+            this.useVisionMode = true;
+          }
+        } else {
+          this.lastPageState = stateHash;
+          this.sameStateCount = 0;
+        }
+
         // Check for login opportunity
         const domain = extractDomain(pageState.url);
         const cred = await getCredentialByDomain(domain);
 
-        // Generate task for LLM
-        const task = this.generateTask(pageState, cred);
+        // Generate task
+        let task: string;
+        let screenshot: string | null = null;
+
+        if (this.useVisionMode) {
+          this.updateState({ currentAction: 'Taking screenshot for vision analysis...' });
+          screenshot = await this.takeScreenshot();
+          task = this.generateVisionTask(pageState, cred, screenshot);
+        } else {
+          task = this.generateTask(pageState, cred);
+        }
 
         // Get LLM decision
-        this.updateState({ currentAction: 'Thinking...' });
-        const action = await this.getNextAction(task, pageState);
+        this.updateState({ currentAction: this.useVisionMode ? 'Analyzing with vision...' : 'Thinking...' });
+        const action = await this.getNextAction(task, pageState, screenshot);
 
         if (action) {
-          // Execute action
           this.updateState({ currentAction: `Executing: ${action.name}` });
           const result = await this.executeAction(action.name, action.args);
+
+          // Check if action succeeded
+          if (result.includes('Error')) {
+            this.consecutiveFailures++;
+            if (this.consecutiveFailures >= 3 && !this.useVisionMode) {
+              console.log('[AGENT] 3 consecutive failures, switching to vision mode');
+              this.useVisionMode = true;
+            }
+          } else {
+            this.consecutiveFailures = 0;
+            if (this.useVisionMode && this.consecutiveFailures === 0) {
+              // Vision mode succeeded, can try DOM mode again next time
+              this.useVisionMode = false;
+            }
+          }
 
           await logActivity({
             type: this.mapActionToActivityType(action.name),
@@ -331,11 +426,11 @@ export class AutonomousBrowserAgent {
           currentAction: `Error: ${error instanceof Error ? error.message : String(error)}`
         });
 
-        // Recovery logic
         if (consecutiveErrors >= 10) {
           console.log('[AGENT] Too many errors, moving to next URL');
           await this.navigateToNextUrl();
           consecutiveErrors = 0;
+          this.useVisionMode = false;
         }
 
         await this.sleep(2000);
@@ -346,11 +441,9 @@ export class AutonomousBrowserAgent {
   }
 
   private async navigateToNextUrl(): Promise<void> {
-    // Get unvisited URL
     let nextUrl = this.urlQueue.find(url => !this.visitedUrls.has(url));
 
     if (!nextUrl) {
-      // All URLs visited, reset and start over
       this.visitedUrls.clear();
       await this.discoverUrls();
       nextUrl = this.urlQueue[0] || 'https://www.bing.com';
@@ -362,7 +455,8 @@ export class AutonomousBrowserAgent {
     try {
       if (this.tabId) {
         await chrome.tabs.update(this.tabId, { url: nextUrl });
-        await this.sleep(2000); // Wait for navigation
+        await this.focusTab();
+        await this.sleep(2000);
       }
     } catch (e) {
       console.warn('[AGENT] Navigation error:', e);
@@ -376,7 +470,6 @@ export class AutonomousBrowserAgent {
       const response = await chrome.tabs.sendMessage(this.tabId, { type: 'GET_PAGE_STATE' });
       return response;
     } catch (e) {
-      // Content script might not be loaded, try injecting it
       try {
         await chrome.scripting.executeScript({
           target: { tabId: this.tabId },
@@ -395,7 +488,6 @@ export class AutonomousBrowserAgent {
   private generateTask(pageState: { url: string; title: string; elements: string }, credential: Credential | null): string {
     let task = '';
 
-    // Include session summary if we have one
     if (this.sessionSummary) {
       task += `Previous session summary:\n${this.sessionSummary}\n\n---\n\n`;
     }
@@ -414,11 +506,12 @@ export class AutonomousBrowserAgent {
 
     task += `Instructions:
 - Browse naturally like a human - read content, scroll, click interesting links
-- If you see cookie consent, ALWAYS accept cookies
-- If you see a login form and have credentials above, log in
-- NEVER use "Sign in with Google" or "Sign in with Apple" - always use email/password
+- If you see cookie consent popup, ALWAYS click Accept/Allow/OK to accept cookies
+- If you see a Google/Apple/Facebook login popup/overlay, use press_escape to close it, then find email/password login
+- If you see a paywall blocking content, use the 'done' tool to move on
+- NEVER use "Sign in with Google/Apple/Facebook" - always use email/password
 - Search using Bing only (not Google)
-- Take your time, explore the page
+- Use press_escape to close unwanted popups or overlays
 - Use the 'done' tool when you want to move to a different site
 
 What single action should you take next?`;
@@ -426,29 +519,59 @@ What single action should you take next?`;
     return task;
   }
 
-  private async getNextAction(task: string, pageState: { url: string }): Promise<{ name: string; args: any } | null> {
-    // Build messages including recent conversation history
+  private generateVisionTask(pageState: { url: string; title: string; elements: string }, credential: Credential | null, screenshot: string | null): string {
+    let task = `VISION MODE: DOM navigation has failed multiple times. Analyze the screenshot to understand what's on the page.\n\n`;
+
+    task += `Current page: ${pageState.url}\nTitle: ${pageState.title}\n\n`;
+
+    if (credential) {
+      task += `You have an account on this site:\n- Email: ${credential.email}\n- Password: ${credential.password}\n\n`;
+    }
+
+    task += `The screenshot shows the current page state. Based on what you see:\n`;
+    task += `- If there's a cookie popup, describe where the Accept button is and use click_coordinates\n`;
+    task += `- If there's a Google/Apple login overlay blocking the page, use press_escape or click X button\n`;
+    task += `- If there's a paywall with no way to close it, use 'done' to move on\n`;
+    task += `- If you see a login form, use click_coordinates to click the email field, then type\n\n`;
+
+    task += `DOM elements (may not reflect what's visible due to overlays):\n${pageState.elements.slice(0, 4000)}\n\n`;
+
+    task += `Use click_coordinates with x,y values if element indexes don't work. What action should you take?`;
+
+    return task;
+  }
+
+  private async getNextAction(task: string, pageState: { url: string }, screenshot: string | null): Promise<{ name: string; args: any } | null> {
     const messages: LLMMessage[] = [
       {
         role: 'system',
-        content: `You are an autonomous web browser. You browse naturally like a human - scrolling, reading, clicking links that interest you. Always accept cookies when asked. Never use Google/Apple login - use email/password instead. Reply with a single tool call for your next action.`
+        content: `You are an autonomous web browser. You browse naturally like a human.
+- ALWAYS accept cookies when you see a consent popup
+- NEVER use Google/Apple/Facebook login - use email/password instead
+- If you see a social login overlay, press Escape or find the X to close it
+- If the page seems stuck or has a paywall, use 'done' to move on
+- Use click_coordinates when element indexes fail (after seeing screenshot)
+Reply with a single tool call for your next action.`
       }
     ];
 
-    // Add recent conversation context (last 5 exchanges)
+    // Add recent conversation context
     const recentHistory = this.conversationHistory.slice(-10);
     for (const msg of recentHistory) {
       messages.push(msg);
     }
 
-    // Add current task
+    // Add current task (with screenshot if in vision mode)
     const userMessage: LLMMessage = { role: 'user', content: task };
     messages.push(userMessage);
+
+    // If we have a screenshot, we need to include it in vision-capable models
+    // Note: OpenRouter handles this with image URLs in content array format
+    // For simplicity, we'll describe that we have a screenshot in the prompt
 
     try {
       const response = await this.llm.chat(messages, this.model, TOOLS, 0.7);
 
-      // Track this exchange in history
       await this.addToHistory(userMessage);
       if (response.content) {
         await this.addToHistory({ role: 'assistant', content: response.content });
@@ -458,7 +581,6 @@ What single action should you take next?`;
         const tc = response.toolCalls[0];
         const args = JSON.parse(tc.function.arguments);
 
-        // Log the action in history
         await this.addToHistory({
           role: 'assistant',
           content: `Action: ${tc.function.name}(${JSON.stringify(args)})`
@@ -467,7 +589,6 @@ What single action should you take next?`;
         return { name: tc.function.name, args };
       }
 
-      // No tool call, probably just wants to observe
       return { name: 'scroll', args: { direction: 'down', amount: 300 } };
     } catch (e) {
       console.error('[AGENT] LLM error:', e);
@@ -486,16 +607,23 @@ What single action should you take next?`;
       case 'click':
         return await this.sendToContent('CLICK', { index: args.index });
 
+      case 'click_coordinates':
+        return await this.sendToContent('CLICK_COORDINATES', { x: args.x, y: args.y });
+
       case 'type':
         return await this.sendToContent('TYPE', { text: args.text, pressEnter: args.pressEnter });
 
       case 'scroll':
         return await this.sendToContent('SCROLL', { direction: args.direction, amount: args.amount || 500 });
 
+      case 'press_escape':
+        return await this.sendToContent('PRESS_KEY', { key: 'Escape' });
+
       case 'navigate':
         const url = args.url.startsWith('http') ? args.url : `https://${args.url}`;
         await chrome.tabs.update(this.tabId, { url });
         this.updateState({ currentUrl: url });
+        await this.focusTab();
         await this.sleep(2000);
         return `Navigated to ${url}`;
 
@@ -508,6 +636,7 @@ What single action should you take next?`;
         const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(args.query)}`;
         await chrome.tabs.update(this.tabId, { url: searchUrl });
         this.updateState({ currentUrl: searchUrl });
+        await this.focusTab();
         await this.sleep(2000);
         return `Searched Bing for: ${args.query}`;
 
@@ -535,7 +664,7 @@ What single action should you take next?`;
   private mapActionToActivityType(action: string): 'navigation' | 'click' | 'type' | 'scroll' | 'search' | 'login' | 'signup' | 'error' {
     switch (action) {
       case 'navigate': return 'navigation';
-      case 'click': return 'click';
+      case 'click': case 'click_coordinates': return 'click';
       case 'type': return 'type';
       case 'scroll': return 'scroll';
       case 'search_bing': return 'search';
@@ -547,12 +676,10 @@ What single action should you take next?`;
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  // Estimate tokens in a string
   private estimateTokens(text: string): number {
     return Math.ceil(text.length / this.CHARS_PER_TOKEN);
   }
 
-  // Estimate total tokens in conversation
   private estimateConversationTokens(): number {
     let total = 0;
     for (const msg of this.conversationHistory) {
@@ -561,46 +688,36 @@ What single action should you take next?`;
     return total;
   }
 
-  // Check if context compaction is needed
   private needsCompaction(): boolean {
     return this.estimateConversationTokens() >= this.TOKEN_LIMIT;
   }
 
-  // Compact context by summarizing and starting fresh
   private async compactContext(): Promise<void> {
     console.log('[AGENT] Context compaction triggered');
-    console.log('[AGENT] Current tokens estimate:', this.estimateConversationTokens());
 
-    // Build summary request
     const summaryMessages: LLMMessage[] = [
       {
         role: 'system',
-        content: 'You are a helpful assistant. Summarize the browsing session concisely, including: key sites visited, actions taken, any logins performed, errors encountered, and current state. Keep it under 500 words.'
+        content: 'Summarize the browsing session concisely: sites visited, actions taken, logins performed, errors encountered. Keep under 500 words.'
       },
       {
         role: 'user',
-        content: `Summarize this browsing session:\n\nPrevious summary: ${this.sessionSummary || 'None'}\n\nRecent actions:\n${this.conversationHistory.map(m => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')}`
+        content: `Summarize this session:\n\nPrevious: ${this.sessionSummary || 'None'}\n\nRecent:\n${this.conversationHistory.map(m => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')}`
       }
     ];
 
     try {
       const response = await this.llm.chat(summaryMessages, this.model, undefined, 0.3);
       this.sessionSummary = response.content || this.sessionSummary;
-      console.log('[AGENT] Session summarized:', this.sessionSummary.slice(0, 100));
     } catch (e) {
-      console.warn('[AGENT] Failed to summarize, keeping recent messages:', e);
-      // Keep last few messages as fallback
-      this.sessionSummary = `Recent activity: ${this.conversationHistory.slice(-3).map(m => m.content.slice(0, 100)).join(' | ')}`;
+      this.sessionSummary = `Recent: ${this.conversationHistory.slice(-3).map(m => m.content.slice(0, 100)).join(' | ')}`;
     }
 
-    // Clear conversation history, keeping only the summary as context
     this.conversationHistory = [];
     this.totalTokensEstimate = this.estimateTokens(this.sessionSummary);
-
-    console.log('[AGENT] Context compacted, new token estimate:', this.totalTokensEstimate);
+    console.log('[AGENT] Context compacted');
   }
 
-  // Add message to conversation history with compaction check
   private async addToHistory(message: LLMMessage): Promise<void> {
     this.conversationHistory.push(message);
     this.totalTokensEstimate += this.estimateTokens(message.content);
