@@ -208,13 +208,12 @@ export class AutonomousBrowserAgent {
 
     this.updateState({ status: 'running', currentAction: 'Initializing...', totalActions: 0, errors: 0 });
 
-    // Generate persona if none exists
-    if (!settings.persona) {
-      this.updateState({ currentAction: 'Generating browsing persona...' });
-      await this.generatePersona();
+    // Use persona from settings (generated via sidebar)
+    this.persona = settings.persona;
+    if (this.persona) {
+      console.log('[AGENT] Using persona:', this.persona.firstName, this.persona.lastName);
     } else {
-      this.persona = settings.persona;
-      console.log('[AGENT] Using existing persona:', this.persona.name);
+      console.log('[AGENT] No persona set - using default browsing behavior');
     }
 
     // Get or create a tab and ensure focus
@@ -242,71 +241,6 @@ export class AutonomousBrowserAgent {
     // Start browsing
     console.log('[AGENT] Starting browsing loop with', this.urlQueue.length, 'URLs');
     await this.browsingLoop();
-  }
-
-  // Generate a random persona for browsing
-  private async generatePersona(): Promise<void> {
-    console.log('[AGENT] Generating persona...');
-
-    try {
-      const response = await this.llm.chat([
-        {
-          role: 'system',
-          content: 'Generate a realistic persona for web browsing. Return ONLY valid JSON, no markdown.'
-        },
-        {
-          role: 'user',
-          content: `Create a random persona with the following JSON structure:
-{
-  "name": "First name",
-  "age": number between 22-55,
-  "location": "City, Country",
-  "occupation": "job title",
-  "interests": ["interest1", "interest2", "interest3", "interest4", "interest5"],
-  "email": null,
-  "favoriteSites": ["example.com", "another.com"]
-}
-
-Make the interests specific and varied (e.g., "vintage synthesizers", "rock climbing", "Japanese cinema", "home automation", "vegan cooking").
-Make favoriteSites relevant to the interests (without https://).
-Return ONLY the JSON object, nothing else.`
-        }
-      ], this.model, undefined, 0.9);
-
-      const content = response.content || '';
-      // Extract JSON from response
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const personaData = JSON.parse(jsonMatch[0]);
-        this.persona = {
-          name: personaData.name || 'Alex',
-          age: personaData.age || 30,
-          location: personaData.location || 'New York, USA',
-          occupation: personaData.occupation || 'Software Developer',
-          interests: personaData.interests || ['technology', 'music', 'travel'],
-          email: personaData.email || null,
-          favoriteSites: personaData.favoriteSites || []
-        };
-
-        console.log('[AGENT] Generated persona:', this.persona.name, '-', this.persona.interests.join(', '));
-
-        // Save persona to settings
-        const { saveSettings } = await import('./storage');
-        await saveSettings({ persona: this.persona });
-      }
-    } catch (e) {
-      console.error('[AGENT] Persona generation failed:', e);
-      // Use default persona
-      this.persona = {
-        name: 'Alex',
-        age: 32,
-        location: 'San Francisco, USA',
-        occupation: 'Marketing Manager',
-        interests: ['technology', 'travel', 'photography', 'cooking', 'fitness'],
-        email: null,
-        favoriteSites: ['reddit.com', 'medium.com', 'youtube.com']
-      };
-    }
   }
 
   stop(): void {
@@ -357,9 +291,10 @@ Return ONLY the JSON object, nothing else.`
 
   private async discoverUrls(): Promise<void> {
     console.log('[AGENT] ========================================');
-    console.log('[AGENT] URL Discovery Phase (Perplexity Research)');
+    console.log('[AGENT] URL Discovery Phase');
     console.log('[AGENT] ========================================');
 
+    const settings = await getSettings();
     const credentials = await getCredentials();
     const credentialUrls = credentials.map(c => c.url);
 
@@ -369,45 +304,38 @@ Return ONLY the JSON object, nothing else.`
       'https://news.ycombinator.com'
     ];
 
-    let personaUrls: string[] = [];
-    if (this.persona?.favoriteSites) {
-      personaUrls = this.persona.favoriteSites.map(s =>
-        s.startsWith('http') ? s : `https://${s}`
-      );
-    }
+    // Use pre-discovered URLs from persona generation if available
+    let discoveredUrls: string[] = settings.discoveredUrls || [];
 
-    let discoveredUrls: string[] = [];
-
-    if (this.persona) {
-      console.log('[AGENT] Persona:', this.persona.name);
+    if (discoveredUrls.length > 0) {
+      console.log('[AGENT] Using', discoveredUrls.length, 'pre-discovered URLs from persona generation');
+    } else if (this.persona) {
+      // Fallback: discover URLs now if not already done
+      console.log('[AGENT] Persona:', this.persona.firstName, this.persona.lastName);
       console.log('[AGENT] Interests:', this.persona.interests.join(', '));
-      console.log('[AGENT] Location:', this.persona.location);
+      console.log('[AGENT] Location:', this.persona.city, this.persona.country);
 
-      // Search for URLs based on each interest
       for (const interest of this.persona.interests.slice(0, 3)) {
         this.updateState({ currentAction: `Researching: ${interest}...` });
 
         try {
-          const query = `Best websites and online communities for ${interest} enthusiasts in ${this.persona.location}. List specific website URLs with https://.`;
+          const query = `Best websites for ${interest} enthusiasts in ${this.persona.city}, ${this.persona.country}. List specific URLs.`;
           console.log('[AGENT] Perplexity query:', query);
 
           const result = await this.llm.searchWithPerplexity(query);
-          console.log('[AGENT] Perplexity response length:', result.length);
 
-          // Extract URLs from response
           const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]()]+/gi;
           const matches = result.match(urlRegex) || [];
           const validUrls = matches
-            .map(url => url.replace(/[.,;:!?*#@'"\]\[]+$/, '')) // Remove trailing punctuation and special chars
-            .map(url => url.replace(/[*#@'"]+/g, '')) // Remove invalid URL characters anywhere
+            .map(url => url.replace(/[.,;:!?*#@'"\]\[]+$/, ''))
+            .map(url => url.replace(/[*#@'"]+/g, ''))
             .filter(url => {
               try {
                 const u = new URL(url);
-                // Skip search engine results pages and invalid URLs
                 return !u.hostname.includes('google.') &&
                        !u.hostname.includes('bing.') &&
                        !u.pathname.includes('/search') &&
-                       u.hostname.length > 3; // Basic sanity check
+                       u.hostname.length > 3;
               } catch {
                 return false;
               }
@@ -415,8 +343,6 @@ Return ONLY the JSON object, nothing else.`
 
           console.log('[AGENT] Found', validUrls.length, 'URLs for', interest);
           discoveredUrls.push(...validUrls);
-
-          // Small delay between searches
           await this.sleep(500);
         } catch (e) {
           console.warn('[AGENT] Perplexity search failed for', interest, ':', e);
@@ -424,11 +350,10 @@ Return ONLY the JSON object, nothing else.`
       }
     }
 
-    // Combine all URLs, remove duplicates, prioritize discovered ones
+    // Combine all URLs, remove duplicates
     const allUrls = [...new Set([
       ...discoveredUrls,
       ...credentialUrls,
-      ...personaUrls,
       ...defaultUrls
     ])];
 
@@ -651,52 +576,31 @@ Return ONLY the JSON object, nothing else.`
     task += `You are browsing the web autonomously. Current page: ${pageState.url}\nTitle: ${pageState.title}\n\n`;
 
     if (this.persona) {
-      task += `Persona: ${this.persona.name}, ${this.persona.age}yo, interested in ${this.persona.interests.join(', ')}.\n\n`;
+      task += `Persona: ${this.persona.firstName} ${this.persona.lastName}, ${this.persona.age}yo from ${this.persona.city}, ${this.persona.country}. Interests: ${this.persona.interests.join(', ')}.\n\n`;
     }
 
     if (credential) {
       task += `You have an account on this site:\n- Email: ${credential.email}\n- Password: ${credential.password}\nIf you see a login form, log in with these credentials.\n\n`;
     }
 
-    // Check for Google/social login indicators in elements
+    // Check for overlays that need automatic handling
     const elementsLower = pageState.elements.toLowerCase();
-    const hasGooglePopup = elementsLower.includes('sign in with google') ||
+    const hasOverlay = elementsLower.includes('[overlay]');
+    const hasCookiePopup = elementsLower.includes('cookie') && (elementsLower.includes('accept') || elementsLower.includes('allow'));
+    const hasSocialLogin = elementsLower.includes('sign in with google') ||
                            elementsLower.includes('continue with google') ||
-                           elementsLower.includes('log in with google') ||
-                           elementsLower.includes('accounts.google.com') ||
-                           elementsLower.includes('signin/oauth') ||
-                           elementsLower.includes('one tap') ||
-                           elementsLower.includes('g_id_onload');
-
-    const hasSocialLogin = hasGooglePopup ||
                            elementsLower.includes('sign in with apple') ||
-                           elementsLower.includes('continue with apple') ||
-                           elementsLower.includes('sign in with facebook') ||
                            elementsLower.includes('continue with facebook');
 
     task += `Interactive elements on page:\n${pageState.elements.slice(0, 8000)}\n\n`;
 
-    if (hasSocialLogin) {
-      task += `**IMPORTANT: Social login popup detected!**
-- A Google/Apple/Facebook login overlay is visible on this page
-- You MUST close it immediately using press_escape or clicking the X/close button
-- Look for elements containing "close", "×", "X", "dismiss", "no thanks", "not now"
-- NEVER click "Sign in with Google/Apple/Facebook" buttons
-- After closing, continue with email/password login if available
-
-`;
-    }
-
     task += `Instructions:
-- Browse naturally like a human - read content, scroll, click interesting links
-- If you see cookie consent popup, ALWAYS click Accept/Allow/OK to accept cookies
-- If you see a Google/Apple/Facebook login popup/overlay, IMMEDIATELY close it:
-  1. First try press_escape
-  2. If that doesn't work, look for X/close/dismiss buttons and click them
-  3. NEVER click social login buttons
-- If you see a paywall blocking content, use the 'done' tool to move on
-- Search using Bing only (not Google)
-- Use the 'done' tool when you want to move to a different site
+- Browse naturally like a human
+- Accept cookie popups immediately (click Accept/Allow/OK)
+- Close any Google/Apple/Facebook login popups (press_escape or click close/X)
+- Never use social login buttons - only email/password
+- If stuck on a paywall, use 'done' to move on
+- Use 'done' when finished with current site
 
 What single action should you take next?`;
 

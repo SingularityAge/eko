@@ -4,6 +4,7 @@
 
 import { getAgent } from '../services/agent';
 import { getSettings, saveSettings, getCredentials, getActivities, logActivity } from '../services/storage';
+import { getOpenRouter } from '../services/openrouter';
 import { BrowserState } from '../shared/types';
 
 // Agent instance
@@ -188,6 +189,94 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ screenshot: dataUrl });
           } catch (e) {
             sendResponse({ error: 'Failed to capture screenshot' });
+          }
+          break;
+
+        case 'AUTOCOMPLETE_CITY':
+          try {
+            const citySettings = await getSettings();
+            if (!citySettings.openRouterApiKey) {
+              sendResponse({ cities: [] });
+              break;
+            }
+            const llm = getOpenRouter(citySettings.openRouterApiKey);
+            const cityResponse = await llm.chat([
+              { role: 'system', content: 'You are a geography assistant. Return ONLY a JSON array of city names, nothing else.' },
+              { role: 'user', content: `List up to 5 cities in ${payload.country} that start with or contain "${payload.query}". Return ONLY a JSON array like ["City1", "City2"]. If no matches, return [].` }
+            ], citySettings.model || 'anthropic/claude-sonnet-4', undefined, 0.3);
+
+            const cityMatch = (cityResponse.content || '').match(/\[[\s\S]*?\]/);
+            const cities = cityMatch ? JSON.parse(cityMatch[0]) : [];
+            sendResponse({ cities: cities.slice(0, 5) });
+          } catch (e) {
+            console.error('[BG] City autocomplete error:', e);
+            sendResponse({ cities: [] });
+          }
+          break;
+
+        case 'GENERATE_PERSONA':
+          try {
+            const personaSettings = await getSettings();
+            if (!personaSettings.openRouterApiKey) {
+              sendResponse({ error: 'No API key' });
+              break;
+            }
+            const llm = getOpenRouter(personaSettings.openRouterApiKey);
+
+            const personaResponse = await llm.chat([
+              { role: 'system', content: 'Generate a realistic persona for web browsing. Return ONLY valid JSON, no markdown or explanation.' },
+              { role: 'user', content: `Create a realistic persona living in ${payload.city}, ${payload.country}. The persona should feel authentic to this location without being a stereotype.
+
+Return ONLY this JSON structure:
+{
+  "firstName": "local first name",
+  "lastName": "local last name",
+  "age": number between 18-55,
+  "country": "${payload.country}",
+  "city": "${payload.city}",
+  "occupation": "realistic job or student",
+  "interests": ["interest1", "interest2", "interest3", "interest4", "interest5"]
+}
+
+Make interests specific and varied (e.g., "urban photography", "indie music", "sustainable fashion", "board games", "hiking"). Return ONLY the JSON.` }
+            ], personaSettings.model || 'anthropic/claude-sonnet-4', undefined, 0.9);
+
+            const personaMatch = (personaResponse.content || '').match(/\{[\s\S]*\}/);
+            if (personaMatch) {
+              const persona = JSON.parse(personaMatch[0]);
+              persona.country = payload.country;
+              persona.city = payload.city;
+
+              // Also trigger URL discovery with Perplexity
+              console.log('[BG] Persona generated, discovering URLs...');
+              try {
+                const urlQuery = `Best websites and online communities for someone in ${persona.city}, ${persona.country} who is a ${persona.occupation} interested in ${persona.interests.join(', ')}. List specific URLs.`;
+                const urlResponse = await llm.searchWithPerplexity(urlQuery);
+
+                const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]()]+/gi;
+                const urls = (urlResponse.match(urlRegex) || [])
+                  .map((url: string) => url.replace(/[.,;:!?*#@'"\]\[]+$/, ''))
+                  .filter((url: string) => {
+                    try {
+                      const u = new URL(url);
+                      return !u.hostname.includes('google.') && !u.hostname.includes('bing.');
+                    } catch { return false; }
+                  });
+
+                // Save URLs for browsing
+                await saveSettings({ discoveredUrls: [...new Set(urls)].slice(0, 20) });
+                console.log('[BG] Discovered', urls.length, 'URLs for persona');
+              } catch (urlErr) {
+                console.warn('[BG] URL discovery failed:', urlErr);
+              }
+
+              sendResponse({ persona });
+            } else {
+              sendResponse({ error: 'Failed to parse persona' });
+            }
+          } catch (e) {
+            console.error('[BG] Persona generation error:', e);
+            sendResponse({ error: String(e) });
           }
           break;
 

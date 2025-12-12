@@ -13,20 +13,17 @@ export interface Settings {
   model: string;
   persona: Persona | null;
   enabled: boolean;
+  discoveredUrls?: string[];
 }
 
 export interface Persona {
-  name: string;
+  firstName: string;
+  lastName: string;
   age: number;
-  location: string;
+  country: string;
+  city: string;
   occupation: string;
   interests: string[];
-  email: {
-    address: string;
-    provider: 'gmail' | 'outlook' | 'yahoo' | 'protonmail';
-    password: string;
-  } | null;
-  favoriteSites: string[];
 }
 
 export interface Credential {
