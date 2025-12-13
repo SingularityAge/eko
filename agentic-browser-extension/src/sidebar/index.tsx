@@ -347,6 +347,7 @@ const styles = `
     padding: 18px;
     margin-bottom: 16px;
     box-shadow: 0 2px 12px rgba(218, 119, 86, 0.06);
+    overflow: visible;
   }
 
   .persona-header {
@@ -410,6 +411,7 @@ const styles = `
     display: flex;
     gap: 10px;
     margin-bottom: 12px;
+    overflow: visible;
   }
 
   .location-row select, .location-row input {
@@ -465,7 +467,7 @@ const styles = `
     border-radius: 10px;
     max-height: 180px;
     overflow-y: auto;
-    z-index: 10;
+    z-index: 1000;
     box-shadow: 0 4px 16px rgba(45, 42, 38, 0.12);
     margin-top: 4px;
   }
@@ -1025,20 +1027,27 @@ function Sidebar() {
     setCityConfirmed(false);
     setCitySelectedFromAutocomplete(false);
 
+    console.log('[SIDEBAR] City input:', value, 'country:', country);
+
     if (value.length >= 2 && country) {
       try {
+        console.log('[SIDEBAR] Requesting city autocomplete...');
         const response = await chrome.runtime.sendMessage({
           type: 'AUTOCOMPLETE_CITY',
           payload: { country, query: value }
         });
+        console.log('[SIDEBAR] Autocomplete response:', response);
         if (response?.cities && response.cities.length > 0) {
+          console.log('[SIDEBAR] Setting suggestions:', response.cities);
           setCitySuggestions(response.cities);
           setShowCitySuggestions(true);
         } else {
+          console.log('[SIDEBAR] No cities returned');
           setCitySuggestions([]);
           setShowCitySuggestions(false);
         }
       } catch (e) {
+        console.error('[SIDEBAR] Autocomplete error:', e);
         setCitySuggestions([]);
       }
     } else {
