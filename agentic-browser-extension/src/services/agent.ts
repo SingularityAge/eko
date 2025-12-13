@@ -1,11 +1,47 @@
 // ============================================
 // Autonomous Browser Agent - Core Logic
 // With vision fallback, tab management, popup handling
+// Human-like behavior with realistic daily schedules
 // ============================================
 
 import { getOpenRouter, OpenRouterService } from './openrouter';
 import { getSettings, getCredentials, getCredentialByDomain, logActivity, extractDomain } from './storage';
 import { Tool, LLMMessage, Persona, BrowserState, Credential } from '../shared/types';
+
+// Timezone offsets by country (approximate, major timezone)
+const COUNTRY_TIMEZONES: Record<string, number> = {
+  'United States': -5, 'Canada': -5, 'Mexico': -6, 'Brazil': -3, 'Argentina': -3,
+  'United Kingdom': 0, 'Ireland': 0, 'Portugal': 0, 'Spain': 1, 'France': 1,
+  'Germany': 1, 'Italy': 1, 'Netherlands': 1, 'Belgium': 1, 'Switzerland': 1,
+  'Austria': 1, 'Poland': 1, 'Czech Republic': 1, 'Sweden': 1, 'Norway': 1,
+  'Denmark': 1, 'Finland': 2, 'Greece': 2, 'Turkey': 3, 'Russia': 3,
+  'Ukraine': 2, 'Romania': 2, 'Hungary': 1, 'South Africa': 2,
+  'Egypt': 2, 'Israel': 2, 'Saudi Arabia': 3, 'United Arab Emirates': 4,
+  'India': 5.5, 'Pakistan': 5, 'Bangladesh': 6, 'Thailand': 7, 'Vietnam': 7,
+  'Singapore': 8, 'Malaysia': 8, 'Philippines': 8, 'Indonesia': 7,
+  'China': 8, 'Hong Kong': 8, 'Taiwan': 8, 'South Korea': 9, 'Japan': 9,
+  'Australia': 10, 'New Zealand': 12
+};
+
+// Activity record for status history
+interface ActivityRecord {
+  type: 'sleep' | 'dinner' | 'shower' | 'break' | 'browsing';
+  startTime: number; // timestamp
+  endTime: number;   // timestamp
+  duration: number;  // minutes
+}
+
+// Daily schedule
+interface DailySchedule {
+  date: string; // YYYY-MM-DD
+  sleepStart: number; // hour in local time (e.g., 22 for 10pm)
+  sleepDuration: number; // hours (6-9)
+  dinnerStart: number; // hour in local time
+  dinnerDuration: number; // minutes
+  showerStart: number; // hour in local time
+  showerDuration: number; // minutes
+  breaks: { hour: number; duration: number }[]; // random breaks throughout day
+}
 
 // Browser tools the agent can use
 const TOOLS: Tool[] = [
@@ -167,6 +203,13 @@ export class AutonomousBrowserAgent {
   private nextSearchInterval: number = 0; // ms until next search session
   private searchesRemaining: number = 0; // searches to do in current session
 
+  // Human behavior simulation
+  private timezoneOffset: number = 0; // hours from UTC
+  private currentSchedule: DailySchedule | null = null;
+  private activityHistory: ActivityRecord[] = []; // last 2 days of activities
+  private currentActivity: { type: string; startTime: number } | null = null;
+  private pauseEndTime: number = 0; // when current pause ends (0 = not paused)
+
   constructor() {
     this.llm = getOpenRouter();
     this.state = {
@@ -232,9 +275,17 @@ export class AutonomousBrowserAgent {
     this.persona = settings.persona;
     if (this.persona) {
       console.log('[AGENT] Using persona:', this.persona.firstName, this.persona.lastName);
+      // Set timezone based on persona's country
+      this.timezoneOffset = COUNTRY_TIMEZONES[this.persona.country] ?? 0;
+      console.log('[AGENT] Timezone offset:', this.timezoneOffset, 'hours from UTC');
     } else {
       console.log('[AGENT] No persona set - using default browsing behavior');
+      this.timezoneOffset = 0;
     }
+
+    // Initialize daily schedule for human-like behavior
+    this.generateDailySchedule();
+    this.cleanupOldActivityHistory();
 
     // Get or create a tab and ensure focus
     try {
@@ -390,6 +441,14 @@ export class AutonomousBrowserAgent {
       }
 
       try {
+        // Check if we should be in a human-like pause (sleep, dinner, shower, break)
+        const isPaused = await this.checkAndHandlePause();
+        if (isPaused) {
+          // During pause, sleep and check again
+          await this.sleep(60000); // Check every minute during pauses
+          continue;
+        }
+
         // Check if it's time for a scheduled Bing search
         const didSearch = await this.checkAndPerformBingSearch();
         if (didSearch) {
@@ -892,6 +951,230 @@ Reply with a single tool call for your next action.`
     }
   }
 
+  // ============================================
+  // Human Behavior Simulation
+  // ============================================
+
+  // Get current hour in persona's local time
+  private getLocalHour(): number {
+    const now = new Date();
+    const utcHour = now.getUTCHours() + now.getUTCMinutes() / 60;
+    let localHour = utcHour + this.timezoneOffset;
+    if (localHour < 0) localHour += 24;
+    if (localHour >= 24) localHour -= 24;
+    return localHour;
+  }
+
+  // Get current date string in persona's timezone
+  private getLocalDateString(): string {
+    const now = new Date();
+    const localTime = new Date(now.getTime() + this.timezoneOffset * 60 * 60 * 1000);
+    return localTime.toISOString().slice(0, 10);
+  }
+
+  // Generate a daily schedule with randomized times
+  private generateDailySchedule(): void {
+    const dateStr = this.getLocalDateString();
+
+    // Don't regenerate if we already have today's schedule
+    if (this.currentSchedule?.date === dateStr) {
+      return;
+    }
+
+    // Sleep: starts between 10pm-midnight, lasts 6-9 hours
+    const sleepStart = 22 + Math.random() * 2; // 22:00-24:00
+    const sleepDuration = 6 + Math.random() * 3; // 6-9 hours
+
+    // Dinner: between 6pm-8pm, lasts 20-45 minutes
+    const dinnerStart = 18 + Math.random() * 2; // 18:00-20:00
+    const dinnerDuration = 20 + Math.floor(Math.random() * 25); // 20-45 min
+
+    // Shower: morning (6-8am) or evening (8-10pm), lasts 10-20 minutes
+    const showerMorning = Math.random() < 0.5;
+    const showerStart = showerMorning
+      ? 6 + Math.random() * 2  // 6:00-8:00
+      : 20 + Math.random() * 2; // 20:00-22:00
+    const showerDuration = 10 + Math.floor(Math.random() * 10); // 10-20 min
+
+    // Random breaks: 2-7 times per day, 3-10 minutes each
+    const numBreaks = 2 + Math.floor(Math.random() * 6); // 2-7 breaks
+    const breaks: { hour: number; duration: number }[] = [];
+
+    // Distribute breaks throughout waking hours (after wake up until dinner)
+    const wakeUpHour = (sleepStart + sleepDuration) % 24;
+    for (let i = 0; i < numBreaks; i++) {
+      // Spread breaks between wake up and sleep time
+      const availableHours = dinnerStart - wakeUpHour;
+      const breakHour = wakeUpHour + (availableHours * (i + 1)) / (numBreaks + 1) + (Math.random() - 0.5);
+      const breakDuration = 3 + Math.floor(Math.random() * 8); // 3-10 min
+      breaks.push({ hour: breakHour, duration: breakDuration });
+    }
+
+    this.currentSchedule = {
+      date: dateStr,
+      sleepStart,
+      sleepDuration,
+      dinnerStart,
+      dinnerDuration,
+      showerStart,
+      showerDuration,
+      breaks
+    };
+
+    console.log('[AGENT] Generated daily schedule:', {
+      date: dateStr,
+      sleep: `${Math.floor(sleepStart)}:${Math.floor((sleepStart % 1) * 60).toString().padStart(2, '0')} for ${sleepDuration.toFixed(1)}h`,
+      dinner: `${Math.floor(dinnerStart)}:${Math.floor((dinnerStart % 1) * 60).toString().padStart(2, '0')} for ${dinnerDuration}min`,
+      shower: `${Math.floor(showerStart)}:${Math.floor((showerStart % 1) * 60).toString().padStart(2, '0')} for ${showerDuration}min`,
+      breaks: breaks.length
+    });
+  }
+
+  // Check if currently in a scheduled pause and handle it
+  private async checkAndHandlePause(): Promise<boolean> {
+    // If we're already in a pause, check if it's over
+    if (this.pauseEndTime > 0) {
+      if (Date.now() < this.pauseEndTime) {
+        return true; // Still paused
+      }
+      // Pause ended - record it
+      if (this.currentActivity) {
+        this.recordActivity(
+          this.currentActivity.type as 'sleep' | 'dinner' | 'shower' | 'break',
+          this.currentActivity.startTime,
+          Date.now()
+        );
+        this.currentActivity = null;
+      }
+      this.pauseEndTime = 0;
+      this.updateState({ status: 'running', currentAction: 'Resuming browsing...' });
+      return false;
+    }
+
+    // Generate new schedule if needed (new day)
+    this.generateDailySchedule();
+
+    if (!this.currentSchedule) return false;
+
+    const localHour = this.getLocalHour();
+    const now = Date.now();
+
+    // Check sleep time
+    const sleepEnd = (this.currentSchedule.sleepStart + this.currentSchedule.sleepDuration) % 24;
+    const inSleepPeriod = this.isHourInRange(localHour, this.currentSchedule.sleepStart, sleepEnd);
+    if (inSleepPeriod) {
+      const remainingHours = this.hoursUntilEnd(localHour, sleepEnd);
+      const pauseMs = remainingHours * 60 * 60 * 1000;
+      this.startPause('sleep', `Sleeping (${Math.round(remainingHours * 10) / 10}h remaining)`, pauseMs);
+      return true;
+    }
+
+    // Check dinner time
+    const dinnerEnd = this.currentSchedule.dinnerStart + this.currentSchedule.dinnerDuration / 60;
+    if (this.isHourInRange(localHour, this.currentSchedule.dinnerStart, dinnerEnd)) {
+      const remainingMin = (dinnerEnd - localHour) * 60;
+      const pauseMs = remainingMin * 60 * 1000;
+      this.startPause('dinner', `Having dinner (${Math.round(remainingMin)}min remaining)`, pauseMs);
+      return true;
+    }
+
+    // Check shower time (within 30 min window)
+    const showerEnd = this.currentSchedule.showerStart + this.currentSchedule.showerDuration / 60;
+    if (this.isHourInRange(localHour, this.currentSchedule.showerStart, showerEnd)) {
+      const remainingMin = (showerEnd - localHour) * 60;
+      const pauseMs = remainingMin * 60 * 1000;
+      this.startPause('shower', `Taking a shower (${Math.round(remainingMin)}min remaining)`, pauseMs);
+      return true;
+    }
+
+    // Check random breaks
+    for (const brk of this.currentSchedule.breaks) {
+      const breakEnd = brk.hour + brk.duration / 60;
+      if (this.isHourInRange(localHour, brk.hour, breakEnd)) {
+        const remainingMin = (breakEnd - localHour) * 60;
+        const pauseMs = remainingMin * 60 * 1000;
+        this.startPause('break', `Taking a break (${Math.round(remainingMin)}min remaining)`, pauseMs);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Helper: check if hour is within a range (handles overnight)
+  private isHourInRange(hour: number, start: number, end: number): boolean {
+    if (end > start) {
+      return hour >= start && hour < end;
+    } else {
+      // Overnight period (e.g., 22:00 to 07:00)
+      return hour >= start || hour < end;
+    }
+  }
+
+  // Helper: calculate hours until end time
+  private hoursUntilEnd(currentHour: number, endHour: number): number {
+    if (endHour > currentHour) {
+      return endHour - currentHour;
+    } else {
+      return (24 - currentHour) + endHour;
+    }
+  }
+
+  // Start a pause period
+  private startPause(type: string, message: string, durationMs: number): void {
+    console.log('[AGENT] Starting pause:', type, '- Duration:', Math.round(durationMs / 60000), 'min');
+    this.pauseEndTime = Date.now() + durationMs;
+    this.currentActivity = { type, startTime: Date.now() };
+    this.updateState({ status: 'paused', currentAction: message });
+  }
+
+  // Record an activity to history
+  private recordActivity(type: 'sleep' | 'dinner' | 'shower' | 'break' | 'browsing', startTime: number, endTime: number): void {
+    const duration = Math.round((endTime - startTime) / 60000); // minutes
+    this.activityHistory.push({
+      type,
+      startTime,
+      endTime,
+      duration
+    });
+    console.log('[AGENT] Recorded activity:', type, '- Duration:', duration, 'min');
+  }
+
+  // Clean up activity history older than 2 days
+  private cleanupOldActivityHistory(): void {
+    const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    this.activityHistory = this.activityHistory.filter(a => a.endTime > twoDaysAgo);
+    console.log('[AGENT] Activity history:', this.activityHistory.length, 'records');
+  }
+
+  // Format activity history for context
+  private formatActivityHistory(): string {
+    if (this.activityHistory.length === 0) {
+      return 'No recorded activities in the last 2 days.';
+    }
+
+    const lines: string[] = ['Activity history (last 2 days):'];
+
+    // Group by date
+    const byDate: Record<string, ActivityRecord[]> = {};
+    for (const activity of this.activityHistory) {
+      const date = new Date(activity.startTime).toLocaleDateString();
+      if (!byDate[date]) byDate[date] = [];
+      byDate[date].push(activity);
+    }
+
+    for (const [date, activities] of Object.entries(byDate)) {
+      lines.push(`\n${date}:`);
+      for (const act of activities) {
+        const startTime = new Date(act.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const endTime = new Date(act.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        lines.push(`  - ${act.type}: ${startTime} - ${endTime} (${act.duration} min)`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
   private estimateTokens(text: string): number {
     return Math.ceil(text.length / this.CHARS_PER_TOKEN);
   }
@@ -911,14 +1194,20 @@ Reply with a single tool call for your next action.`
   private async compactContext(): Promise<void> {
     console.log('[AGENT] Context compaction triggered');
 
+    // Clean up old activity history before compaction
+    this.cleanupOldActivityHistory();
+
+    // Include activity history in the summary
+    const activityHistoryText = this.formatActivityHistory();
+
     const summaryMessages: LLMMessage[] = [
       {
         role: 'system',
-        content: 'Summarize the browsing session concisely: sites visited, actions taken, logins performed, errors encountered. Keep under 500 words.'
+        content: 'Summarize the browsing session concisely: sites visited, actions taken, logins performed, errors encountered. Also include a brief summary of the persona\'s daily activity patterns from the history. Keep under 600 words.'
       },
       {
         role: 'user',
-        content: `Summarize this session:\n\nPrevious: ${this.sessionSummary || 'None'}\n\nRecent:\n${this.conversationHistory.map(m => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')}`
+        content: `Summarize this session:\n\nPrevious summary: ${this.sessionSummary || 'None'}\n\n${activityHistoryText}\n\nRecent browsing:\n${this.conversationHistory.map(m => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')}`
       }
     ];
 
@@ -926,12 +1215,13 @@ Reply with a single tool call for your next action.`
       const response = await this.llm.chat(summaryMessages, this.model, undefined, 0.3);
       this.sessionSummary = response.content || this.sessionSummary;
     } catch (e) {
-      this.sessionSummary = `Recent: ${this.conversationHistory.slice(-3).map(m => m.content.slice(0, 100)).join(' | ')}`;
+      // Fallback: include activity history in a simpler format
+      this.sessionSummary = `${activityHistoryText}\n\nRecent: ${this.conversationHistory.slice(-3).map(m => m.content.slice(0, 100)).join(' | ')}`;
     }
 
     this.conversationHistory = [];
     this.totalTokensEstimate = this.estimateTokens(this.sessionSummary);
-    console.log('[AGENT] Context compacted');
+    console.log('[AGENT] Context compacted with activity history');
   }
 
   private async addToHistory(message: LLMMessage): Promise<void> {
