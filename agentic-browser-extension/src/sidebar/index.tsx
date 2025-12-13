@@ -412,6 +412,57 @@ const styles = `
     opacity: 0.75;
   }
 
+  /* Schedule Display */
+  .schedule-box {
+    background: white;
+    border: 1px solid rgba(74, 144, 164, 0.15);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(45, 42, 38, 0.04);
+  }
+  .schedule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .schedule-title {
+    font-size: 11px;
+    color: #9A938B;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+  }
+  .schedule-timezone {
+    font-size: 10px;
+    color: #B8B0A8;
+  }
+  .schedule-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .schedule-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: #F5F0EB;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+  }
+  .schedule-item-icon {
+    opacity: 0.7;
+  }
+  .schedule-item-time {
+    color: #4A4641;
+    font-weight: 500;
+  }
+  .schedule-item-label {
+    color: #7A746D;
+  }
+
   .section-title {
     font-size: 12px;
     font-weight: 600;
@@ -1031,6 +1082,9 @@ function Sidebar() {
   const [apiKeyValid, setApiKeyValid] = useState<boolean | null>(null); // null = not tested, true = valid, false = invalid
   const [validatingApiKey, setValidatingApiKey] = useState(false);
 
+  // Schedule display
+  const [schedule, setSchedule] = useState<{ meals: { type: string; time: string }[]; sleep: string; shower: string } | null>(null);
+
   // Email settings for agent signups
   const [agentEmail, setAgentEmail] = useState('');
   const [agentEmailPassword, setAgentEmailPassword] = useState('');
@@ -1115,7 +1169,22 @@ function Sidebar() {
 
     const interval = setInterval(() => {
       loadState();
+      // Fetch schedule when agent is running
+      if (state.status === 'running' || state.status === 'paused') {
+        chrome.runtime.sendMessage({ type: 'GET_SCHEDULE' }).then((response) => {
+          if (response?.schedule) {
+            setSchedule(response.schedule);
+          }
+        }).catch(() => {});
+      }
     }, 2000);
+
+    // Initial schedule fetch
+    chrome.runtime.sendMessage({ type: 'GET_SCHEDULE' }).then((response) => {
+      if (response?.schedule) {
+        setSchedule(response.schedule);
+      }
+    }).catch(() => {});
 
     return () => {
       chrome.runtime.onMessage.removeListener(listener);
@@ -1550,6 +1619,35 @@ function Sidebar() {
           <div className="current-action-label">Current Action</div>
           <div className="current-action-text">{activityInfo ? 'Paused for activity' : (state.currentAction || 'Idle')}</div>
         </div>
+
+        {/* Schedule Display - only show when agent is running or paused and we have a schedule */}
+        {schedule && (state.status === 'running' || state.status === 'paused') && (
+          <div className="schedule-box">
+            <div className="schedule-header">
+              <div className="schedule-title">Today's Schedule</div>
+              <div className="schedule-timezone">{persona?.city || 'Local'} time</div>
+            </div>
+            <div className="schedule-items">
+              {schedule.meals.map((meal, i) => (
+                <div key={i} className="schedule-item">
+                  <span className="schedule-item-icon">🍽️</span>
+                  <span className="schedule-item-time">{meal.time}</span>
+                  <span className="schedule-item-label">{meal.type}</span>
+                </div>
+              ))}
+              <div className="schedule-item">
+                <span className="schedule-item-icon">🚿</span>
+                <span className="schedule-item-time">{schedule.shower}</span>
+                <span className="schedule-item-label">Shower</span>
+              </div>
+              <div className="schedule-item">
+                <span className="schedule-item-icon">😴</span>
+                <span className="schedule-item-time">{schedule.sleep}</span>
+                <span className="schedule-item-label">Sleep</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Persona Box */}
         <div className="persona-box">

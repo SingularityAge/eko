@@ -351,6 +351,65 @@ export class AutonomousBrowserAgent {
     }
   }
 
+  // Get current schedule for UI display
+  getSchedule(): { meals: { type: string; time: string }[]; sleep: string; shower: string } | null {
+    if (!this.currentSchedule) return null;
+
+    const formatTime = (hour: number): string => {
+      const h = Math.floor(hour) % 24;
+      const m = Math.floor((hour % 1) * 60);
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
+
+    const meals = this.currentSchedule.meals.map(m => ({
+      type: m.type.charAt(0).toUpperCase() + m.type.slice(1),
+      time: formatTime(m.hour)
+    })).sort((a, b) => {
+      const timeA = a.time.split(':').map(Number);
+      const timeB = b.time.split(':').map(Number);
+      return (timeA[0] * 60 + timeA[1]) - (timeB[0] * 60 + timeB[1]);
+    });
+
+    const sleepEnd = (this.currentSchedule.sleepStart + this.currentSchedule.sleepDuration) % 24;
+
+    return {
+      meals,
+      sleep: `${formatTime(this.currentSchedule.sleepStart)} - ${formatTime(sleepEnd)}`,
+      shower: formatTime(this.currentSchedule.showerStart)
+    };
+  }
+
+  // Handle tab being closed externally - recover by creating a new tab
+  async handleTabClosed(): Promise<void> {
+    console.log('[AGENT] Tab was closed, attempting recovery...');
+    this.tabId = null;
+
+    // Only recover if we're still supposed to be running
+    if (!this.running || this.state.status === 'idle') {
+      console.log('[AGENT] Not running, no recovery needed');
+      return;
+    }
+
+    try {
+      // Create a new tab
+      const newTab = await chrome.tabs.create({ url: 'about:blank', active: true });
+      this.tabId = newTab.id || null;
+
+      if (this.tabId) {
+        console.log('[AGENT] Created new working tab:', this.tabId);
+        await this.focusTab();
+        await this.protectWorkingTab();
+        this.updateState({ currentAction: 'Recovered from tab close, continuing...' });
+      } else {
+        console.error('[AGENT] Failed to create recovery tab');
+        this.updateState({ currentAction: 'Error: Could not recover tab', errors: this.state.errors + 1 });
+      }
+    } catch (e) {
+      console.error('[AGENT] Tab recovery error:', e);
+      this.updateState({ currentAction: 'Error: Tab recovery failed', errors: this.state.errors + 1 });
+    }
+  }
+
   // Focus the active tab
   private async focusTab(): Promise<void> {
     if (!this.tabId) return;
@@ -654,14 +713,35 @@ export class AutonomousBrowserAgent {
     this.visitedUrls.add(nextUrl);
     this.updateState({ currentUrl: nextUrl, currentAction: `Navigating to ${nextUrl}` });
 
+    // Ensure we have a valid tab
+    if (!this.tabId) {
+      console.log('[AGENT] No tab available, recovering...');
+      await this.handleTabClosed();
+    }
+
     try {
       if (this.tabId) {
-        await chrome.tabs.update(this.tabId, { url: nextUrl });
-        await this.focusTab();
-        await this.sleep(2000);
+        // Try to verify the tab still exists
+        try {
+          await chrome.tabs.get(this.tabId);
+        } catch {
+          // Tab doesn't exist, recover
+          console.log('[AGENT] Tab no longer exists, recovering...');
+          await this.handleTabClosed();
+        }
+
+        if (this.tabId) {
+          await chrome.tabs.update(this.tabId, { url: nextUrl });
+          await this.focusTab();
+          await this.sleep(2000);
+        }
       }
     } catch (e) {
       console.warn('[AGENT] Navigation error:', e);
+      // Try to recover from navigation errors
+      if (String(e).includes('No tab') || String(e).includes('cannot find')) {
+        await this.handleTabClosed();
+      }
     }
   }
 

@@ -19,9 +19,10 @@ let currentState: BrowserState = {
   errors: 0
 };
 
-// Tab management - track tabs opened by the agent
-const agentTabs: Map<number, { openedAt: number; closeAfter: number }> = new Map();
-let currentMaxTabs: number = 1 + Math.floor(Math.random() * 5); // Random 1-5 tabs max
+// Tab management - simplified approach
+// Only track secondary tabs (popups, new windows opened by agent)
+// Each tab has a lastActivity timestamp - close if inactive for 3-5 minutes
+const secondaryTabs: Map<number, { lastActivity: number; closeAfterMs: number }> = new Map();
 let workingTabId: number | null = null; // The agent's primary working tab - NEVER close this
 
 // Listen for state changes from agent
@@ -84,54 +85,49 @@ async function fetchOpenRouterModels(apiKey: string): Promise<any[]> {
   }
 }
 
-// Tab cleanup - close abandoned tabs and enforce max tab limit
-function scheduleTabCleanup(tabId: number): void {
-  // NEVER schedule cleanup for the working tab
+// Track a secondary tab (not the working tab) for cleanup
+function trackSecondaryTab(tabId: number): void {
+  // Never track the working tab
   if (tabId === workingTabId) {
-    console.log('[BG] Skipping cleanup schedule for working tab:', tabId);
+    console.log('[BG] Not tracking working tab:', tabId);
     return;
   }
 
-  // Random delay between 1-5 minutes (60000ms - 300000ms)
-  const delay = 60000 + Math.random() * 240000;
-  agentTabs.set(tabId, { openedAt: Date.now(), closeAfter: delay });
-
-  // Check if we exceed max tabs - close oldest ones
-  enforceMaxTabs();
-
-  setTimeout(() => {
-    // Double-check it's not the working tab before closing
-    if (tabId === workingTabId) {
-      console.log('[BG] Skipping close for working tab:', tabId);
-      return;
-    }
-    const tabInfo = agentTabs.get(tabId);
-    if (tabInfo && Date.now() - tabInfo.openedAt >= tabInfo.closeAfter) {
-      chrome.tabs.remove(tabId).catch(() => {});
-      agentTabs.delete(tabId);
-      console.log('[BG] Closed abandoned tab after timeout:', tabId);
-      // Randomize max tabs for next cycle
-      currentMaxTabs = 1 + Math.floor(Math.random() * 5);
-    }
-  }, delay);
+  // Random timeout between 3-5 minutes
+  const closeAfterMs = (180 + Math.random() * 120) * 1000; // 180-300 seconds
+  secondaryTabs.set(tabId, {
+    lastActivity: Date.now(),
+    closeAfterMs
+  });
+  console.log('[BG] Tracking secondary tab:', tabId, 'will close after', Math.round(closeAfterMs / 1000), 'seconds of inactivity');
 }
 
-// Enforce maximum tab limit - close oldest tabs if over limit
-function enforceMaxTabs(): void {
-  if (agentTabs.size <= currentMaxTabs) return;
+// Update activity on a secondary tab (keeps it alive)
+function updateTabActivity(tabId: number): void {
+  if (secondaryTabs.has(tabId)) {
+    const info = secondaryTabs.get(tabId)!;
+    info.lastActivity = Date.now();
+    console.log('[BG] Updated activity for tab:', tabId);
+  }
+}
 
-  // Sort tabs by openedAt time (oldest first), excluding the working tab
-  const sortedTabs = Array.from(agentTabs.entries())
-    .filter(([tabId]) => tabId !== workingTabId) // Never close working tab
-    .sort((a, b) => a[1].openedAt - b[1].openedAt);
+// Clean up inactive secondary tabs
+function cleanupInactiveTabs(): void {
+  const now = Date.now();
 
-  // Close oldest tabs until we're within limit
-  const tabsToClose = sortedTabs.slice(0, Math.max(0, agentTabs.size - currentMaxTabs));
+  for (const [tabId, info] of secondaryTabs.entries()) {
+    // Never close the working tab
+    if (tabId === workingTabId) {
+      secondaryTabs.delete(tabId);
+      continue;
+    }
 
-  for (const [tabId] of tabsToClose) {
-    chrome.tabs.remove(tabId).catch(() => {});
-    agentTabs.delete(tabId);
-    console.log('[BG] Closed tab to enforce limit:', tabId, '(max:', currentMaxTabs, ')');
+    const inactiveFor = now - info.lastActivity;
+    if (inactiveFor >= info.closeAfterMs) {
+      console.log('[BG] Closing inactive tab:', tabId, 'inactive for', Math.round(inactiveFor / 1000), 'seconds');
+      chrome.tabs.remove(tabId).catch(() => {});
+      secondaryTabs.delete(tabId);
+    }
   }
 }
 
@@ -221,23 +217,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
 
         case 'TRACK_TAB':
-          scheduleTabCleanup(payload.tabId);
+          trackSecondaryTab(payload.tabId);
           sendResponse({ ok: true });
           break;
 
         case 'FOCUS_TAB':
           await focusTab(payload.tabId);
+          // Update activity when focusing
+          updateTabActivity(payload.tabId);
           sendResponse({ ok: true });
           break;
 
         case 'SET_WORKING_TAB':
           workingTabId = payload.tabId;
-          // Remove from cleanup tracking if it was added
-          if (agentTabs.has(payload.tabId)) {
-            agentTabs.delete(payload.tabId);
+          // Remove from secondary tracking if it was added
+          if (secondaryTabs.has(payload.tabId)) {
+            secondaryTabs.delete(payload.tabId);
           }
           console.log('[BG] Working tab set to:', workingTabId);
           sendResponse({ ok: true });
+          break;
+
+        case 'CLEAR_WORKING_TAB':
+          console.log('[BG] Clearing working tab:', workingTabId);
+          workingTabId = null;
+          sendResponse({ ok: true });
+          break;
+
+        case 'GET_WORKING_TAB':
+          sendResponse({ tabId: workingTabId });
+          break;
+
+        case 'GET_SCHEDULE':
+          const schedule = agent.getSchedule();
+          sendResponse({ schedule });
           break;
 
         case 'TAKE_SCREENSHOT':
@@ -420,49 +433,53 @@ chrome.action.onClicked.addListener(async (tab) => {
 // Set up side panel behavior
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
-// Listen for new tabs and automatically track them for cleanup
+// Listen for new tabs - only track them if the agent is running and they're not the working tab
 chrome.tabs.onCreated.addListener((tab) => {
-  // Don't track extension pages, chrome:// pages, or the working tab
-  if (tab.id &&
-      tab.id !== workingTabId &&
-      !tab.url?.startsWith('chrome://') &&
-      !tab.url?.startsWith('chrome-extension://')) {
-    console.log('[BG] New tab created, scheduling cleanup:', tab.id);
-    scheduleTabCleanup(tab.id);
+  // Skip extension pages, chrome:// pages
+  if (!tab.id ||
+      tab.url?.startsWith('chrome://') ||
+      tab.url?.startsWith('chrome-extension://')) {
+    return;
+  }
+
+  // Skip the working tab
+  if (tab.id === workingTabId) {
+    console.log('[BG] New tab is working tab, not tracking for cleanup:', tab.id);
+    return;
+  }
+
+  // Only track if the agent is running (to avoid tracking user's normal tabs)
+  if (currentState.status === 'running') {
+    console.log('[BG] New tab created while agent running, tracking for cleanup:', tab.id);
+    trackSecondaryTab(tab.id);
   }
 });
 
 // Track when tabs are removed to clean up our tracking
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (agentTabs.has(tabId)) {
-    agentTabs.delete(tabId);
-    console.log('[BG] Tab removed from tracking:', tabId);
+  // Clean up secondary tab tracking
+  if (secondaryTabs.has(tabId)) {
+    secondaryTabs.delete(tabId);
+    console.log('[BG] Secondary tab removed:', tabId);
+  }
+
+  // Check if the working tab was closed
+  if (tabId === workingTabId) {
+    console.log('[BG] WARNING: Working tab was closed:', tabId);
+    workingTabId = null;
+    // Notify the agent that its tab was closed
+    agent.handleTabClosed();
   }
 });
 
-// Periodic tab cleanup - runs every 30 seconds to enforce limits
+// Listen for tab activation to update activity timestamps
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  updateTabActivity(activeInfo.tabId);
+});
+
+// Periodic cleanup - runs every 30 seconds
 setInterval(() => {
-  // Enforce max tabs
-  enforceMaxTabs();
-
-  // Clean up any tabs that have exceeded their timeout (except working tab)
-  const now = Date.now();
-  for (const [tabId, tabInfo] of agentTabs.entries()) {
-    // NEVER close the working tab
-    if (tabId === workingTabId) continue;
-
-    if (now - tabInfo.openedAt >= tabInfo.closeAfter) {
-      chrome.tabs.remove(tabId).catch(() => {});
-      agentTabs.delete(tabId);
-      console.log('[BG] Periodic cleanup - closed tab:', tabId);
-    }
-  }
-
-  // Periodically randomize max tabs (every ~5 minutes based on 30s intervals)
-  if (Math.random() < 0.1) {
-    currentMaxTabs = 1 + Math.floor(Math.random() * 5);
-    console.log('[BG] New max tabs limit:', currentMaxTabs);
-  }
+  cleanupInactiveTabs();
 }, 30000);
 
 // Log startup
