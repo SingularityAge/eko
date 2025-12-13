@@ -213,6 +213,11 @@ export class AutonomousBrowserAgent {
   // Initial test browsing period (3-6 minutes at session start)
   private testPeriodEndTime: number = 0; // when test period ends (0 = no test period)
 
+  // Ad/sponsored content interaction (10-20 per day)
+  private dailyAdClicks: number = 0;
+  private targetAdClicks: number = 10 + Math.floor(Math.random() * 11); // 10-20
+  private lastAdClickDate: string = ''; // YYYY-MM-DD to track day changes
+
   constructor() {
     this.llm = getOpenRouter();
     this.state = {
@@ -558,6 +563,17 @@ export class AutonomousBrowserAgent {
               // Vision mode succeeded, can try DOM mode again next time
               this.useVisionMode = false;
             }
+
+            // Track ad clicks by checking for ad-related patterns in action
+            if (action.name === 'click' || action.name === 'click_coordinates') {
+              const actionStr = JSON.stringify(action.args).toLowerCase();
+              const resultStr = result.toLowerCase();
+              const adPatterns = ['ad', 'sponsor', 'promo', 'advertis', 'partner', 'paid'];
+              const isAdClick = adPatterns.some(p => actionStr.includes(p) || resultStr.includes(p));
+              if (isAdClick) {
+                this.recordAdClick();
+              }
+            }
           }
 
           this.updateState({ totalActions: this.state.totalActions + 1 });
@@ -665,6 +681,33 @@ export class AutonomousBrowserAgent {
     }
   }
 
+  // Check and reset daily ad click counter
+  private checkAndResetAdCounter(): void {
+    const today = new Date().toISOString().split('T')[0];
+    if (this.lastAdClickDate !== today) {
+      this.lastAdClickDate = today;
+      this.dailyAdClicks = 0;
+      this.targetAdClicks = 10 + Math.floor(Math.random() * 11); // New random 10-20 target
+      console.log('[AGENT] New day - ad click target:', this.targetAdClicks);
+    }
+  }
+
+  // Should the agent click an ad now?
+  private shouldClickAd(): boolean {
+    this.checkAndResetAdCounter();
+    if (this.dailyAdClicks >= this.targetAdClicks) return false;
+    // Probability increases as we get further from target
+    const remaining = this.targetAdClicks - this.dailyAdClicks;
+    const probability = Math.min(0.3, remaining * 0.02); // Max 30% chance per page
+    return Math.random() < probability;
+  }
+
+  // Record an ad click
+  private recordAdClick(): void {
+    this.dailyAdClicks++;
+    console.log('[AGENT] Ad clicked - daily total:', this.dailyAdClicks, '/', this.targetAdClicks);
+  }
+
   private generateTask(pageState: { url: string; title: string; elements: string }, credential: Credential | null): string {
     let task = '';
 
@@ -689,6 +732,9 @@ export class AutonomousBrowserAgent {
 
     task += `Interactive elements on page:\n${pageState.elements.slice(0, 8000)}\n\n`;
 
+    // Check if we should encourage ad interaction
+    const shouldInteractWithAds = this.shouldClickAd();
+
     task += `Instructions:
 - Browse naturally like a human
 - Accept cookie popups immediately (click Accept/Allow/OK)
@@ -697,7 +743,16 @@ export class AutonomousBrowserAgent {
 - If stuck on a paywall, use 'done' to move on
 - Use 'done' when finished with current site
 - IMPORTANT: If a signup form requires a phone number, ABORT the signup immediately and use 'done' to move on
-- When filling address forms, use the persona's address data
+- When filling address forms, use the persona's address data`;
+
+    if (shouldInteractWithAds) {
+      task += `
+- AD ENGAGEMENT: If you see any ads, sponsored content, or promotional banners that look interesting, click on them to explore
+- SURVEYS: If you encounter a survey or poll, complete it with plausible opinions based on the persona's interests and demographics
+- VIDEOS: If there's sponsored video content, watch it briefly (scroll to it, let it play)`;
+    }
+
+    task += `
 
 What single action should you take next?`;
 
@@ -726,9 +781,15 @@ What single action should you take next?`;
     task += `- If there's a Google/Apple login overlay blocking the page, use press_escape or click X button\n`;
     task += `- If there's a paywall with no way to close it, use 'done' to move on\n`;
     task += `- If you see a login form, use click_coordinates to click the email field, then type\n`;
-    task += `- IMPORTANT: If a signup form requires a phone number, ABORT and use 'done' to move on\n\n`;
+    task += `- IMPORTANT: If a signup form requires a phone number, ABORT and use 'done' to move on\n`;
 
-    task += `DOM elements (may not reflect what's visible due to overlays):\n${pageState.elements.slice(0, 4000)}\n\n`;
+    // Check if we should encourage ad interaction
+    if (this.shouldClickAd()) {
+      task += `- If you see ads or sponsored content that looks interesting, click on them\n`;
+      task += `- If there's a survey or poll visible, complete it with plausible opinions\n`;
+    }
+
+    task += `\nDOM elements (may not reflect what's visible due to overlays):\n${pageState.elements.slice(0, 4000)}\n\n`;
 
     task += `Use click_coordinates with x,y values if element indexes don't work. What action should you take?`;
 
@@ -746,6 +807,9 @@ What single action should you take next?`;
 - If the page seems stuck or has a paywall, use 'done' to move on
 - IMPORTANT: If a signup requires a phone number, ABORT immediately and use 'done' - we cannot handle phone verification
 - Use click_coordinates when element indexes fail (after seeing screenshot)
+- When instructed to engage with ads: click on interesting ads, sponsored posts, or promotional content
+- When completing surveys: provide plausible, consistent opinions matching the persona's demographics and interests
+- Watch sponsored videos briefly when encountered
 Reply with a single tool call for your next action.`
       }
     ];
