@@ -110,6 +110,19 @@ const RefreshIcon = () => (
   </svg>
 );
 
+const PlayIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="#2D2A26" stroke="none">
+    <polygon points="6,4 20,12 6,20" />
+  </svg>
+);
+
+const PauseIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="#2D2A26" stroke="none">
+    <rect x="5" y="4" width="5" height="16" rx="1" />
+    <rect x="14" y="4" width="5" height="16" rx="1" />
+  </svg>
+);
+
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Vollkorn:wght@500&display=swap');
 
@@ -176,9 +189,69 @@ const styles = `
   /* Controls */
   .controls {
     display: flex;
-    gap: 10px;
-    justify-content: center;
+    gap: 12px;
+    align-items: center;
     margin-bottom: 20px;
+  }
+
+  .play-pause-btn {
+    width: 52px;
+    height: 52px;
+    border: none;
+    border-radius: 12px;
+    background: #FAF6F3;
+    border: 1px solid #E8E2DC;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+  .play-pause-btn:hover {
+    background: #F0EBE6;
+    border-color: #D4CFC9;
+  }
+  .play-pause-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .play-pause-btn svg {
+    color: #2D2A26;
+  }
+
+  .stats-inline {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+  }
+
+  .stat-inline {
+    background: white;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(218, 119, 86, 0.1);
+    box-shadow: 0 2px 8px rgba(45, 42, 38, 0.04);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .stat-inline-value {
+    font-size: 20px;
+    font-weight: 600;
+    color: #DA7756;
+    line-height: 1.2;
+  }
+
+  .stat-inline-label {
+    font-size: 10px;
+    color: #9A938B;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
 
   .btn {
@@ -227,37 +300,6 @@ const styles = `
     background: #D45858;
   }
 
-  /* Stats */
-  .stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-
-  .stat {
-    background: white;
-    padding: 16px;
-    border-radius: 12px;
-    text-align: center;
-    border: 1px solid rgba(218, 119, 86, 0.1);
-    box-shadow: 0 2px 8px rgba(45, 42, 38, 0.04);
-  }
-
-  .stat-value {
-    font-size: 28px;
-    font-weight: 600;
-    color: #DA7756;
-    line-height: 1.2;
-  }
-
-  .stat-label {
-    font-size: 12px;
-    color: #9A938B;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 4px;
-  }
 
   /* Current Action Box */
   .current-action {
@@ -1187,7 +1229,8 @@ function Sidebar() {
   };
 
   const handleStop = async () => {
-    await chrome.runtime.sendMessage({ type: 'STOP' });
+    // Stop now just pauses - doesn't reset everything
+    await chrome.runtime.sendMessage({ type: 'PAUSE' });
   };
 
   const handlePause = async () => {
@@ -1316,36 +1359,48 @@ function Sidebar() {
           </button>
         </div>
 
-        {/* Controls */}
+        {/* Controls + Stats in one line */}
         <div className="controls">
+          {/* Play/Pause Button */}
           {state.status === 'idle' && (
-            <button className="btn btn-primary" onClick={handleStart} disabled={!canStart}>
-              Start Browsing
+            <button
+              className="play-pause-btn"
+              onClick={handleStart}
+              disabled={!canStart}
+              title="Start Browsing"
+            >
+              <PlayIcon />
             </button>
           )}
           {state.status === 'running' && (
-            <>
-              <button className="btn btn-secondary" onClick={handlePause}>Pause</button>
-              <button className="btn btn-danger" onClick={handleStop}>Stop</button>
-            </>
+            <button
+              className="play-pause-btn"
+              onClick={handlePause}
+              title="Pause"
+            >
+              <PauseIcon />
+            </button>
           )}
           {state.status === 'paused' && (
-            <>
-              <button className="btn btn-primary" onClick={handleResume}>Resume</button>
-              <button className="btn btn-danger" onClick={handleStop}>Stop</button>
-            </>
+            <button
+              className="play-pause-btn"
+              onClick={handleResume}
+              title="Resume"
+            >
+              <PlayIcon />
+            </button>
           )}
-        </div>
 
-        {/* Stats */}
-        <div className="stats">
-          <div className="stat">
-            <div className="stat-value">{state.totalActions}</div>
-            <div className="stat-label">Actions</div>
-          </div>
-          <div className="stat">
-            <div className="stat-value">{state.errors}</div>
-            <div className="stat-label">Errors</div>
+          {/* Stats inline */}
+          <div className="stats-inline">
+            <div className="stat-inline">
+              <div className="stat-inline-value">{state.totalActions}</div>
+              <div className="stat-inline-label">Actions</div>
+            </div>
+            <div className="stat-inline">
+              <div className="stat-inline-value">{state.errors}</div>
+              <div className="stat-inline-label">Errors</div>
+            </div>
           </div>
         </div>
 
