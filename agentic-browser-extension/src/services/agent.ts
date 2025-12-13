@@ -162,6 +162,11 @@ export class AutonomousBrowserAgent {
   private actionsOnCurrentPage: number = 0;
   private scrollsOnCurrentPage: number = 0;
 
+  // Bing search scheduling (1-3 searches every 1-3 hours)
+  private lastSearchTime: number = 0;
+  private nextSearchInterval: number = 0; // ms until next search session
+  private searchesRemaining: number = 0; // searches to do in current session
+
   constructor() {
     this.llm = getOpenRouter();
     this.state = {
@@ -216,6 +221,10 @@ export class AutonomousBrowserAgent {
     this.consecutiveFailures = 0;
     this.actionsOnCurrentPage = 0;
     this.scrollsOnCurrentPage = 0;
+
+    // Initialize Bing search scheduling (1-3 hours = 3600000-10800000 ms)
+    this.lastSearchTime = Date.now();
+    this.scheduleNextSearchSession();
 
     this.updateState({ status: 'running', currentAction: 'Initializing...', totalActions: 0, errors: 0 });
 
@@ -319,58 +328,29 @@ export class AutonomousBrowserAgent {
 
     const settings = await getSettings();
     const credentials = await getCredentials();
-    const credentialUrls = credentials.map(c => c.url);
+    const credentialUrls = credentials.map(c => c.url).filter(url => url);
 
+    // Default URLs to start browsing
     const defaultUrls = [
+      'https://www.bing.com',
       'https://www.reddit.com',
       'https://www.youtube.com',
-      'https://news.ycombinator.com'
+      'https://news.ycombinator.com',
+      'https://www.wikipedia.org',
+      'https://www.medium.com'
     ];
 
     // Use pre-discovered URLs from persona generation if available
-    let discoveredUrls: string[] = settings.discoveredUrls || [];
+    const discoveredUrls: string[] = settings.discoveredUrls || [];
 
     if (discoveredUrls.length > 0) {
-      console.log('[AGENT] Using', discoveredUrls.length, 'pre-discovered URLs from persona generation');
-    } else if (this.persona) {
-      // Fallback: discover URLs now if not already done
+      console.log('[AGENT] Using', discoveredUrls.length, 'pre-discovered URLs');
+    }
+
+    if (this.persona) {
       console.log('[AGENT] Persona:', this.persona.firstName, this.persona.lastName);
       console.log('[AGENT] Interests:', this.persona.interests.join(', '));
       console.log('[AGENT] Location:', this.persona.city, this.persona.country);
-
-      for (const interest of this.persona.interests.slice(0, 3)) {
-        this.updateState({ currentAction: `Researching: ${interest}...` });
-
-        try {
-          const query = `Best websites for ${interest} enthusiasts in ${this.persona.city}, ${this.persona.country}. List specific URLs.`;
-          console.log('[AGENT] Perplexity query:', query);
-
-          const result = await this.llm.searchWithPerplexity(query);
-
-          const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]()]+/gi;
-          const matches = result.match(urlRegex) || [];
-          const validUrls = matches
-            .map(url => url.replace(/[.,;:!?*#@'"\]\[]+$/, ''))
-            .map(url => url.replace(/[*#@'"]+/g, ''))
-            .filter(url => {
-              try {
-                const u = new URL(url);
-                return !u.hostname.includes('google.') &&
-                       !u.hostname.includes('bing.') &&
-                       !u.pathname.includes('/search') &&
-                       u.hostname.length > 3;
-              } catch {
-                return false;
-              }
-            });
-
-          console.log('[AGENT] Found', validUrls.length, 'URLs for', interest);
-          discoveredUrls.push(...validUrls);
-          await this.sleep(500);
-        } catch (e) {
-          console.warn('[AGENT] Perplexity search failed for', interest, ':', e);
-        }
-      }
     }
 
     // Combine all URLs, remove duplicates
@@ -410,6 +390,14 @@ export class AutonomousBrowserAgent {
       }
 
       try {
+        // Check if it's time for a scheduled Bing search
+        const didSearch = await this.checkAndPerformBingSearch();
+        if (didSearch) {
+          // After search, continue loop to interact with search results
+          await this.sleep(1000);
+          continue;
+        }
+
         // Ensure focus on our tab
         await this.focusTab();
 
@@ -812,6 +800,96 @@ Reply with a single tool call for your next action.`
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     return shuffled;
+  }
+
+  // Schedule next Bing search session (1-3 hours from now)
+  private scheduleNextSearchSession(): void {
+    // 1-3 hours in milliseconds
+    const minHours = 1 * 60 * 60 * 1000; // 1 hour
+    const maxHours = 3 * 60 * 60 * 1000; // 3 hours
+    this.nextSearchInterval = minHours + Math.random() * (maxHours - minHours);
+    this.searchesRemaining = 0; // Will be set when search session starts
+    console.log('[AGENT] Next Bing search session in:', Math.round(this.nextSearchInterval / 60000), 'minutes');
+  }
+
+  // Check if it's time for a Bing search and perform if needed
+  private async checkAndPerformBingSearch(): Promise<boolean> {
+    const timeSinceLastSearch = Date.now() - this.lastSearchTime;
+
+    // Start a new search session if interval has passed
+    if (timeSinceLastSearch >= this.nextSearchInterval && this.searchesRemaining === 0) {
+      // Start new session: 1-3 searches
+      this.searchesRemaining = 1 + Math.floor(Math.random() * 3);
+      console.log('[AGENT] Starting Bing search session:', this.searchesRemaining, 'searches planned');
+    }
+
+    // Perform a search if we have searches remaining
+    if (this.searchesRemaining > 0) {
+      await this.performBingSearch();
+      this.searchesRemaining--;
+
+      // If session complete, schedule next one
+      if (this.searchesRemaining === 0) {
+        this.lastSearchTime = Date.now();
+        this.scheduleNextSearchSession();
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  // Generate a search query based on persona interests
+  private generateSearchQuery(): string {
+    if (!this.persona || this.persona.interests.length === 0) {
+      const defaultQueries = [
+        'trending news today',
+        'popular videos',
+        'interesting articles',
+        'what\'s happening in the world',
+        'best websites to explore'
+      ];
+      return defaultQueries[Math.floor(Math.random() * defaultQueries.length)];
+    }
+
+    const interest = this.persona.interests[Math.floor(Math.random() * this.persona.interests.length)];
+    const queryTemplates = [
+      `${interest} news`,
+      `best ${interest} websites`,
+      `${interest} tips and tricks`,
+      `${interest} community`,
+      `latest ${interest} trends`,
+      `${interest} for beginners`,
+      `${interest} ${this.persona.city}`,
+      `popular ${interest} sites`
+    ];
+    return queryTemplates[Math.floor(Math.random() * queryTemplates.length)];
+  }
+
+  // Perform a Bing search with a generated query
+  private async performBingSearch(): Promise<void> {
+    const query = this.generateSearchQuery();
+    console.log('[AGENT] Performing Bing search:', query);
+    this.updateState({ currentAction: `Searching Bing: ${query}` });
+
+    const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
+
+    if (this.tabId) {
+      await chrome.tabs.update(this.tabId, { url: searchUrl });
+      this.updateState({ currentUrl: searchUrl });
+      await this.focusTab();
+      await this.sleep(2000);
+
+      // Reset page counters for search results page
+      this.actionsOnCurrentPage = 0;
+      this.scrollsOnCurrentPage = 0;
+
+      await logActivity({
+        type: 'search',
+        url: searchUrl,
+        details: `Bing search: ${query}`
+      });
+    }
   }
 
   private estimateTokens(text: string): number {
