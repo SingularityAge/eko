@@ -1,5 +1,6 @@
 // ============================================
 // Sidebar UI - Control Panel
+// Redesigned with warm Anthropic Claude aesthetics
 // ============================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -32,28 +33,34 @@ const COUNTRIES = [
 
 // Icons
 const GearIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#333333" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3"></circle>
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
   </svg>
 );
 
+const CloseIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"></line>
+    <line x1="6" y1="6" x2="18" y2="18"></line>
+  </svg>
+);
+
 const CheckIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4CAF50" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B8C5A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20 6 9 17 4 12"></polyline>
   </svg>
 );
 
 const SparklesIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"></path>
     <path d="M19 13l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"></path>
-    <path d="M5 17l.5 1.5L7 19l-1.5.5L5 21l-.5-1.5L3 19l1.5-.5L5 17z"></path>
   </svg>
 );
 
 const DownloadIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
     <polyline points="7 10 12 15 17 10"></polyline>
     <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -61,111 +68,614 @@ const DownloadIcon = () => (
 );
 
 const UploadIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
     <polyline points="17 8 12 3 7 8"></polyline>
     <line x1="12" y1="3" x2="12" y2="15"></line>
   </svg>
 );
 
+const KeyIcon = () => (
+  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#DA7756" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+  </svg>
+);
+
 const styles = `
+  @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Vollkorn:wght@500&display=swap');
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fff; color: #1a1a1a; }
-  .container { padding: 12px; min-height: 100vh; display: flex; flex-direction: column; }
 
-  .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid #eee; margin-bottom: 12px; }
-  .header-left h1 { font-size: 18px; font-weight: 600; color: #DA7756; }
-  .header-left .status { font-size: 11px; color: #666; margin-top: 2px; }
-  .status.ready { color: #4CAF50; }
-  .status.running { color: #2196F3; }
-  .status.paused { color: #FF9800; }
+  body {
+    font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(180deg, #FDF8F6 0%, #FFF9F7 100%);
+    color: #2D2A26;
+    font-size: 14px;
+    line-height: 1.5;
+  }
 
-  .controls { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
-  .btn { padding: 10px 20px; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
-  .btn-primary { background: #DA7756; color: white; }
-  .btn-primary:hover { background: #c4684a; }
-  .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
-  .btn-secondary { background: #f5f5f5; color: #333; border: 1px solid #ddd; }
-  .btn-secondary:hover { background: #eee; }
-  .btn-danger { background: #f44336; color: white; }
+  .container {
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
 
-  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
-  .stat { background: #f9f9f9; padding: 10px; border-radius: 6px; text-align: center; }
-  .stat-value { font-size: 20px; font-weight: 600; color: #DA7756; }
-  .stat-label { font-size: 10px; color: #888; text-transform: uppercase; }
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(218, 119, 86, 0.15);
+    margin-bottom: 20px;
+  }
 
-  .current-action { background: #f0f7ff; border: 1px solid #cce5ff; border-radius: 6px; padding: 10px; margin-bottom: 12px; }
-  .current-action-label { font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 2px; }
-  .current-action-text { font-size: 12px; color: #333; word-break: break-word; }
+  .header h1 {
+    font-family: 'Vollkorn', Georgia, serif;
+    font-size: 26px;
+    font-weight: 500;
+    color: #DA7756;
+    letter-spacing: -0.5px;
+  }
 
-  .url-box { background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; padding: 10px; margin-bottom: 12px; }
+  .header .status {
+    font-size: 13px;
+    color: #7A746D;
+    margin-top: 4px;
+    font-weight: 400;
+  }
+  .status.ready { color: #5B8C5A; }
+  .status.running { color: #4A90A4; }
+  .status.paused { color: #C4884C; }
 
-  .section-title { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; margin-bottom: 6px; }
+  .gear-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 10px;
+    color: #9A938B;
+    transition: all 0.2s;
+  }
+  .gear-btn:hover {
+    background: rgba(218, 119, 86, 0.1);
+    color: #DA7756;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+
+  .btn {
+    padding: 12px 28px;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'Google Sans', sans-serif;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #DA7756 0%, #C4684A 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(218, 119, 86, 0.3);
+  }
+  .btn-primary:hover {
+    background: linear-gradient(135deg, #C4684A 0%, #B55D40 100%);
+    box-shadow: 0 4px 12px rgba(218, 119, 86, 0.4);
+    transform: translateY(-1px);
+  }
+  .btn-primary:disabled {
+    background: #D4CFC9;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .btn-secondary {
+    background: #FAF6F3;
+    color: #5A544D;
+    border: 1px solid #E8E2DC;
+  }
+  .btn-secondary:hover {
+    background: #F0EBE6;
+    border-color: #D4CFC9;
+  }
+
+  .btn-danger {
+    background: #E57373;
+    color: white;
+  }
+  .btn-danger:hover {
+    background: #D45858;
+  }
+
+  /* Stats */
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .stat {
+    background: white;
+    padding: 16px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid rgba(218, 119, 86, 0.1);
+    box-shadow: 0 2px 8px rgba(45, 42, 38, 0.04);
+  }
+
+  .stat-value {
+    font-size: 28px;
+    font-weight: 600;
+    color: #DA7756;
+    line-height: 1.2;
+  }
+
+  .stat-label {
+    font-size: 12px;
+    color: #9A938B;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+  }
+
+  /* Current Action Box */
+  .current-action {
+    background: white;
+    border: 1px solid rgba(74, 144, 164, 0.15);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(45, 42, 38, 0.04);
+  }
+
+  .current-action-label {
+    font-size: 11px;
+    color: #9A938B;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+
+  .current-action-text {
+    font-size: 14px;
+    color: #4A4641;
+    word-break: break-word;
+  }
+
+  .url-box {
+    background: #FAF8F6;
+    border: 1px solid #E8E2DC;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9A938B;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
 
   /* Persona Box */
-  .persona-box { background: #f0f7ff; border: 1px solid #cce5ff; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
-  .persona-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-  .persona-title { font-size: 10px; color: #666; text-transform: uppercase; }
-  .persona-icons { display: flex; gap: 8px; }
-  .persona-icons button { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center; }
-  .persona-icons button:hover { background: rgba(0,0,0,0.05); }
+  .persona-box {
+    background: white;
+    border: 1px solid rgba(218, 119, 86, 0.12);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 12px rgba(218, 119, 86, 0.06);
+  }
 
-  .placeholder-bar { background: #ddd; border-radius: 3px; height: 14px; margin-bottom: 6px; }
-  .placeholder-bar.short { width: 60%; }
-  .placeholder-bar.medium { width: 80%; }
+  .persona-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .persona-title {
+    font-size: 12px;
+    color: #9A938B;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  .persona-icons {
+    display: flex;
+    gap: 6px;
+  }
+
+  .persona-icons button {
+    background: #FAF6F3;
+    border: 1px solid #E8E2DC;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    color: #7A746D;
+    transition: all 0.2s;
+  }
+  .persona-icons button:hover {
+    background: #F0EBE6;
+    color: #5A544D;
+    border-color: #D4CFC9;
+  }
+
+  .placeholder-bar {
+    background: linear-gradient(90deg, #E8E2DC 0%, #D4CFC9 50%, #E8E2DC 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: 6px;
+    height: 16px;
+    margin-bottom: 10px;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .placeholder-bar.short { width: 55%; }
+  .placeholder-bar.medium { width: 75%; }
   .placeholder-bar.long { width: 100%; }
 
-  .location-row { display: flex; gap: 8px; margin-bottom: 8px; }
-  .location-row select, .location-row input { flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
-  .location-row select:disabled, .location-row input:disabled { background: #eee; cursor: not-allowed; }
+  .location-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
 
-  .city-wrapper { position: relative; flex: 1; display: flex; align-items: center; }
-  .city-wrapper input { width: 100%; padding-right: 28px; }
-  .city-check { position: absolute; right: 8px; opacity: 0; transition: opacity 0.3s; }
+  .location-row select, .location-row input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid #E8E2DC;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: 'Google Sans', sans-serif;
+    background: #FDFBFA;
+    color: #4A4641;
+    transition: all 0.2s;
+  }
+  .location-row select:focus, .location-row input:focus {
+    outline: none;
+    border-color: #DA7756;
+    box-shadow: 0 0 0 3px rgba(218, 119, 86, 0.1);
+  }
+  .location-row select:disabled, .location-row input:disabled {
+    background: #F5F2EF;
+    cursor: not-allowed;
+    color: #B5AFA8;
+  }
+
+  .city-wrapper {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+  }
+  .city-wrapper input {
+    width: 100%;
+    padding-right: 36px;
+  }
+
+  .city-check {
+    position: absolute;
+    right: 12px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
   .city-check.visible { opacity: 1; }
   .city-check.fade-out { animation: fadeOut 2s forwards; }
   @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
 
-  .city-suggestions { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 4px; max-height: 150px; overflow-y: auto; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-  .city-suggestion { padding: 6px 10px; cursor: pointer; font-size: 12px; }
-  .city-suggestion:hover { background: #f0f7ff; }
+  .city-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #E8E2DC;
+    border-radius: 10px;
+    max-height: 180px;
+    overflow-y: auto;
+    z-index: 10;
+    box-shadow: 0 4px 16px rgba(45, 42, 38, 0.12);
+    margin-top: 4px;
+  }
 
-  .generate-btn { display: flex; align-items: center; gap: 6px; color: #555; font-size: 12px; cursor: pointer; padding: 6px 0; opacity: 0; animation: fadeIn 1s forwards; margin-top: 4px; }
-  .generate-btn:hover { color: #333; }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .city-suggestion {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #4A4641;
+    transition: background 0.15s;
+  }
+  .city-suggestion:hover {
+    background: #FDF8F6;
+  }
+  .city-suggestion:first-child {
+    border-radius: 10px 10px 0 0;
+  }
+  .city-suggestion:last-child {
+    border-radius: 0 0 10px 10px;
+  }
 
-  .persona-data { animation: fadeIn 0.5s forwards; }
-  .persona-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
-  .persona-details { font-size: 11px; color: #666; margin-bottom: 4px; }
-  .persona-interests { font-size: 10px; color: #888; }
+  .generate-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #DA7756;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 10px 0;
+    opacity: 0;
+    animation: fadeIn 0.5s forwards;
+    transition: color 0.2s;
+  }
+  .generate-btn:hover {
+    color: #C4684A;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
-  /* Settings Box */
-  .settings-box { background: #f9f9f9; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
-  .form-group { margin-bottom: 10px; }
-  .form-group:last-child { margin-bottom: 0; }
-  .form-group label { display: block; font-size: 11px; font-weight: 500; margin-bottom: 4px; color: #555; }
-  .form-group input, .form-group select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
-  .form-group input:focus, .form-group select:focus { outline: none; border-color: #DA7756; }
-  .form-group .hint { font-size: 10px; color: #888; margin-top: 2px; }
-  .model-confirm { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 6px 10px; background: #e8f5e9; border-radius: 4px; font-size: 11px; color: #2e7d32; }
-
-  .warning { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 12px; color: #856404; }
+  .persona-data {
+    animation: fadeIn 0.5s forwards;
+  }
+  .persona-name {
+    font-size: 17px;
+    font-weight: 600;
+    color: #2D2A26;
+    margin-bottom: 4px;
+  }
+  .persona-details {
+    font-size: 14px;
+    color: #7A746D;
+    margin-bottom: 4px;
+  }
+  .persona-interests {
+    font-size: 13px;
+    color: #9A938B;
+    margin-top: 8px;
+    line-height: 1.6;
+  }
 
   /* Activities */
-  .activities { flex: 1; overflow-y: auto; max-height: 200px; }
-  .activity { padding: 6px; border-bottom: 1px solid #f0f0f0; font-size: 11px; }
-  .activity:last-child { border-bottom: none; }
-  .activity-type { display: inline-block; padding: 1px 4px; border-radius: 3px; font-size: 9px; font-weight: 500; margin-right: 6px; }
-  .activity-type.navigation { background: #e3f2fd; color: #1976d2; }
-  .activity-type.click { background: #f3e5f5; color: #7b1fa2; }
-  .activity-type.type { background: #e8f5e9; color: #388e3c; }
-  .activity-type.scroll { background: #fff3e0; color: #f57c00; }
-  .activity-type.search { background: #fce4ec; color: #c2185b; }
-  .activity-type.error { background: #ffebee; color: #d32f2f; }
-  .activity-time { color: #999; font-size: 9px; float: right; }
-  .activity-details { margin-top: 2px; color: #666; font-size: 10px; }
+  .activities {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 180px;
+    background: white;
+    border: 1px solid #E8E2DC;
+    border-radius: 12px;
+    padding: 4px;
+  }
 
-  .empty-state { text-align: center; padding: 16px; color: #888; font-size: 12px; }
+  .activity {
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin: 2px;
+    transition: background 0.15s;
+  }
+  .activity:hover {
+    background: #FAF8F6;
+  }
+
+  .activity-type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-right: 8px;
+  }
+  .activity-type.navigation { background: #E3F2FD; color: #1976D2; }
+  .activity-type.click { background: #F3E5F5; color: #7B1FA2; }
+  .activity-type.type { background: #E8F5E9; color: #388E3C; }
+  .activity-type.scroll { background: #FFF3E0; color: #F57C00; }
+  .activity-type.search { background: #FCE4EC; color: #C2185B; }
+  .activity-type.error { background: #FFEBEE; color: #D32F2F; }
+
+  .activity-time {
+    color: #B5AFA8;
+    font-size: 11px;
+    float: right;
+  }
+
+  .activity-details {
+    margin-top: 4px;
+    color: #7A746D;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 24px;
+    color: #9A938B;
+    font-size: 14px;
+  }
+
+  /* Glassmorphism Overlay */
+  .glass-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(253, 248, 246, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    animation: overlayFadeIn 0.3s ease;
+  }
+  @keyframes overlayFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(218, 119, 86, 0.2);
+    border-radius: 20px;
+    padding: 32px;
+    max-width: 280px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(45, 42, 38, 0.12);
+    animation: cardSlideUp 0.4s ease;
+  }
+  @keyframes cardSlideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .glass-card h2 {
+    font-family: 'Vollkorn', Georgia, serif;
+    font-size: 22px;
+    font-weight: 500;
+    color: #2D2A26;
+    margin: 16px 0 12px;
+  }
+
+  .glass-card p {
+    font-size: 14px;
+    color: #7A746D;
+    margin-bottom: 24px;
+    line-height: 1.6;
+  }
+
+  .glass-card .btn {
+    width: 100%;
+  }
+
+  /* Settings Modal */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(45, 42, 38, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    animation: overlayFadeIn 0.2s ease;
+  }
+
+  .modal-content {
+    background: white;
+    border-radius: 20px;
+    padding: 24px;
+    width: calc(100% - 40px);
+    max-width: 340px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 16px 48px rgba(45, 42, 38, 0.2);
+    animation: modalSlideUp 0.3s ease;
+  }
+  @keyframes modalSlideUp {
+    from { opacity: 0; transform: scale(0.95) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .modal-header h2 {
+    font-family: 'Vollkorn', Georgia, serif;
+    font-size: 22px;
+    font-weight: 500;
+    color: #2D2A26;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    color: #9A938B;
+    transition: all 0.2s;
+  }
+  .modal-close:hover {
+    background: #FAF6F3;
+    color: #5A544D;
+  }
+
+  .form-group {
+    margin-bottom: 18px;
+  }
+
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: #5A544D;
+  }
+
+  .form-group input, .form-group select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #E8E2DC;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: 'Google Sans', sans-serif;
+    background: #FDFBFA;
+    color: #4A4641;
+    transition: all 0.2s;
+  }
+  .form-group input:focus, .form-group select:focus {
+    outline: none;
+    border-color: #DA7756;
+    box-shadow: 0 0 0 3px rgba(218, 119, 86, 0.1);
+  }
+
+  .form-group .hint {
+    font-size: 12px;
+    color: #9A938B;
+    margin-top: 6px;
+  }
+
+  .model-confirm {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: rgba(91, 140, 90, 0.1);
+    border-radius: 8px;
+    font-size: 13px;
+    color: #5B8C5A;
+  }
 `;
 
 interface OpenRouterModel {
@@ -193,6 +703,7 @@ function Sidebar() {
   });
   const [hasApiKey, setHasApiKey] = useState(false);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Persona state
   const [persona, setPersona] = useState<Persona | null>(null);
@@ -227,7 +738,7 @@ function Sidebar() {
 
   const loadActivities = async () => {
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVITIES', payload: { limit: 20 } });
+      const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVITIES', payload: { limit: 15 } });
       if (Array.isArray(response)) {
         setActivities(response);
       }
@@ -242,6 +753,7 @@ function Sidebar() {
       if (response) {
         setApiKey(response.openRouterApiKey || '');
         setSelectedModel(response.model || 'anthropic/claude-sonnet-4');
+        setHasApiKey(!!response.openRouterApiKey);
         if (response.persona) {
           setPersona(response.persona);
           setCountry(response.persona.country || '');
@@ -360,7 +872,6 @@ function Sidebar() {
 
       if (response?.persona) {
         setPersona(response.persona);
-        // Save to settings
         await chrome.runtime.sendMessage({
           type: 'SAVE_SETTINGS',
           payload: { persona: response.persona }
@@ -433,6 +944,9 @@ function Sidebar() {
       payload: { openRouterApiKey: apiKey, model: selectedModel }
     });
     setHasApiKey(!!apiKey);
+    if (apiKey) {
+      setShowSettings(false);
+    }
   };
 
   const handleModelChange = async (newModel: string) => {
@@ -466,23 +980,22 @@ function Sidebar() {
     <>
       <style>{styles}</style>
       <div className="container">
+        {/* Header */}
         <div className="header">
           <div className="header-left">
-            <h1>AutoBrowser</h1>
+            <h1>Autobrowser</h1>
             <div className={`status ${state.status}`}>
               {state.status === 'idle' && 'Ready to browse'}
               {state.status === 'running' && 'Browsing autonomously'}
               {state.status === 'paused' && 'Paused'}
             </div>
           </div>
+          <button className="gear-btn" onClick={() => setShowSettings(true)} title="Settings">
+            <GearIcon />
+          </button>
         </div>
 
-        {!hasApiKey && (
-          <div className="warning">
-            Configure your OpenRouter API key below to start browsing.
-          </div>
-        )}
-
+        {/* Controls */}
         <div className="controls">
           {state.status === 'idle' && (
             <button className="btn btn-primary" onClick={handleStart} disabled={!canStart}>
@@ -503,6 +1016,7 @@ function Sidebar() {
           )}
         </div>
 
+        {/* Stats */}
         <div className="stats">
           <div className="stat">
             <div className="stat-value">{state.totalActions}</div>
@@ -514,6 +1028,7 @@ function Sidebar() {
           </div>
         </div>
 
+        {/* Current Action */}
         <div className="current-action">
           <div className="current-action-label">Current Action</div>
           <div className="current-action-text">{state.currentAction || 'Idle'}</div>
@@ -551,12 +1066,10 @@ function Sidebar() {
 
           {!persona ? (
             <>
-              {/* Placeholder bars */}
-              <div className="placeholder-bar short" style={{ marginBottom: '8px' }}></div>
-              <div className="placeholder-bar medium" style={{ marginBottom: '8px' }}></div>
-              <div className="placeholder-bar long" style={{ marginBottom: '12px' }}></div>
+              <div className="placeholder-bar short"></div>
+              <div className="placeholder-bar medium"></div>
+              <div className="placeholder-bar long" style={{ marginBottom: '16px' }}></div>
 
-              {/* Location selectors */}
               <div className="location-row">
                 <select
                   value={country}
@@ -593,15 +1106,16 @@ function Sidebar() {
                 </div>
               </div>
 
-              {/* Generate button */}
               {locationSet && !generatingPersona && (
                 <div className="generate-btn" onClick={generatePersona}>
-                  <span>Generate browsing persona</span>
                   <SparklesIcon />
+                  <span>Generate browsing persona</span>
                 </div>
               )}
               {generatingPersona && (
-                <div style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>Generating persona...</div>
+                <div style={{ fontSize: '14px', color: '#9A938B', marginTop: '12px' }}>
+                  Generating persona...
+                </div>
               )}
             </>
           ) : (
@@ -609,58 +1123,11 @@ function Sidebar() {
               <div className="persona-name">{persona.firstName} {persona.lastName}, {persona.age}</div>
               <div className="persona-details">{persona.occupation}</div>
               <div className="persona-details">{persona.city}, {persona.country}</div>
-              <div className="persona-interests">Interests: {persona.interests.join(', ')}</div>
+              <div className="persona-interests">
+                <strong>Interests:</strong> {persona.interests.join(', ')}
+              </div>
             </div>
           )}
-        </div>
-
-        {/* Settings Box */}
-        <div className="settings-box">
-          <div className="form-group">
-            <label>OpenRouter API Key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-              placeholder="sk-or-..."
-            />
-            <div className="hint">Get your key from openrouter.ai</div>
-          </div>
-
-          <div className="form-group">
-            <label>Model</label>
-            {!apiKey ? (
-              <select disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
-                <option>Enter API key first...</option>
-              </select>
-            ) : loadingModels ? (
-              <div style={{ padding: '8px', color: '#666', fontSize: '12px' }}>Loading models...</div>
-            ) : models.length > 0 ? (
-              <select value={selectedModel} onChange={e => handleModelChange(e.target.value)}>
-                {sortedProviders.map(provider => (
-                  <optgroup key={provider} label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
-                    {groupedModels[provider].map(model => (
-                      <option key={model.id} value={model.id}>{model.name}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            ) : (
-              <select disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
-                <option>No models loaded</option>
-              </select>
-            )}
-            {modelConfirm && (
-              <div className="model-confirm">
-                <CheckIcon />
-                <span>{modelConfirm} activated</span>
-              </div>
-            )}
-          </div>
-
-          <button className="btn btn-primary" onClick={handleSaveSettings} style={{ width: '100%' }}>
-            Save Settings
-          </button>
         </div>
 
         {/* Recent Activity */}
@@ -673,11 +1140,90 @@ function Sidebar() {
               <div className="activity" key={activity.id}>
                 <span className={`activity-type ${activity.type}`}>{activity.type}</span>
                 <span className="activity-time">{formatTime(activity.timestamp)}</span>
-                <div className="activity-details">{activity.details.slice(0, 60)}</div>
+                <div className="activity-details">{activity.details.slice(0, 80)}</div>
               </div>
             ))
           )}
         </div>
+
+        {/* Glassmorphism Overlay - No API Key */}
+        {!hasApiKey && (
+          <div className="glass-overlay">
+            <div className="glass-card">
+              <KeyIcon />
+              <h2>API Key Required</h2>
+              <p>
+                To start autonomous browsing, please configure your OpenRouter API key in settings.
+              </p>
+              <button className="btn btn-primary" onClick={() => setShowSettings(true)}>
+                Open Settings
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Settings Modal */}
+        {showSettings && (
+          <div className="modal-overlay" onClick={() => hasApiKey && setShowSettings(false)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Settings</h2>
+                {hasApiKey && (
+                  <button className="modal-close" onClick={() => setShowSettings(false)}>
+                    <CloseIcon />
+                  </button>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label>OpenRouter API Key</label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={e => setApiKey(e.target.value)}
+                  placeholder="sk-or-..."
+                  autoFocus
+                />
+                <div className="hint">Get your key from openrouter.ai</div>
+              </div>
+
+              <div className="form-group">
+                <label>Model</label>
+                {!apiKey ? (
+                  <select disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                    <option>Enter API key first...</option>
+                  </select>
+                ) : loadingModels ? (
+                  <div style={{ padding: '10px', color: '#9A938B', fontSize: '14px' }}>Loading models...</div>
+                ) : models.length > 0 ? (
+                  <select value={selectedModel} onChange={e => handleModelChange(e.target.value)}>
+                    {sortedProviders.map(provider => (
+                      <optgroup key={provider} label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
+                        {groupedModels[provider].map(model => (
+                          <option key={model.id} value={model.id}>{model.name}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                ) : (
+                  <select disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                    <option>No models loaded</option>
+                  </select>
+                )}
+                {modelConfirm && (
+                  <div className="model-confirm">
+                    <CheckIcon />
+                    <span>{modelConfirm} activated</span>
+                  </div>
+                )}
+              </div>
+
+              <button className="btn btn-primary" onClick={handleSaveSettings} style={{ width: '100%', marginTop: '8px' }}>
+                Save Settings
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
