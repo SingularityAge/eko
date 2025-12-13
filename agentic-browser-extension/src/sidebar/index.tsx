@@ -901,6 +901,9 @@ interface Persona {
   city: string;
   occupation: string;
   interests: string[];
+  streetAddress?: string;
+  state?: string;
+  zipCode?: string;
 }
 
 function Sidebar() {
@@ -1444,6 +1447,11 @@ function Sidebar() {
               <div className="persona-name">{persona.firstName} {persona.lastName}, {persona.age}</div>
               <div className="persona-details">{persona.occupation}</div>
               <div className="persona-details">{persona.city}, {persona.country}</div>
+              {persona.streetAddress && (
+                <div className="persona-details" style={{ fontSize: '12px', color: '#9A938B' }}>
+                  {persona.streetAddress}, {persona.state} {persona.zipCode}
+                </div>
+              )}
               <div className="persona-interests">
                 <strong>Interests:</strong> {persona.interests.join(', ')}
               </div>

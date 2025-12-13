@@ -30,6 +30,10 @@ export interface Persona {
   city: string;
   occupation: string;
   interests: string[];
+  // Address fields for website signups
+  streetAddress: string;  // e.g., "123 Main Street"
+  state: string;          // e.g., "New York" or federal state/region
+  zipCode: string;        // e.g., "10001"
 }
 
 export interface Credential {

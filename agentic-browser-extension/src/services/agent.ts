@@ -681,7 +681,12 @@ export class AutonomousBrowserAgent {
     task += `You are browsing the web autonomously. Current page: ${pageState.url}\nTitle: ${pageState.title}\n\n`;
 
     if (this.persona) {
-      task += `Persona: ${this.persona.firstName} ${this.persona.lastName}, ${this.persona.age}yo from ${this.persona.city}, ${this.persona.country}. Interests: ${this.persona.interests.join(', ')}.\n\n`;
+      task += `Persona: ${this.persona.firstName} ${this.persona.lastName}, ${this.persona.age}yo from ${this.persona.city}, ${this.persona.country}. Interests: ${this.persona.interests.join(', ')}.\n`;
+      // Include address for form filling
+      if (this.persona.streetAddress) {
+        task += `Address: ${this.persona.streetAddress}, ${this.persona.city}, ${this.persona.state} ${this.persona.zipCode}, ${this.persona.country}\n`;
+      }
+      task += '\n';
     }
 
     if (credential) {
@@ -697,6 +702,8 @@ export class AutonomousBrowserAgent {
 - Never use social login buttons - only email/password
 - If stuck on a paywall, use 'done' to move on
 - Use 'done' when finished with current site
+- IMPORTANT: If a signup form requires a phone number, ABORT the signup immediately and use 'done' to move on
+- When filling address forms, use the persona's address data
 
 What single action should you take next?`;
 
@@ -708,6 +715,14 @@ What single action should you take next?`;
 
     task += `Current page: ${pageState.url}\nTitle: ${pageState.title}\n\n`;
 
+    if (this.persona) {
+      task += `Persona: ${this.persona.firstName} ${this.persona.lastName}\n`;
+      if (this.persona.streetAddress) {
+        task += `Address: ${this.persona.streetAddress}, ${this.persona.city}, ${this.persona.state} ${this.persona.zipCode}\n`;
+      }
+      task += '\n';
+    }
+
     if (credential) {
       task += `You have an account on this site:\n- Email: ${credential.email}\n- Password: ${credential.password}\n\n`;
     }
@@ -716,7 +731,8 @@ What single action should you take next?`;
     task += `- If there's a cookie popup, describe where the Accept button is and use click_coordinates\n`;
     task += `- If there's a Google/Apple login overlay blocking the page, use press_escape or click X button\n`;
     task += `- If there's a paywall with no way to close it, use 'done' to move on\n`;
-    task += `- If you see a login form, use click_coordinates to click the email field, then type\n\n`;
+    task += `- If you see a login form, use click_coordinates to click the email field, then type\n`;
+    task += `- IMPORTANT: If a signup form requires a phone number, ABORT and use 'done' to move on\n\n`;
 
     task += `DOM elements (may not reflect what's visible due to overlays):\n${pageState.elements.slice(0, 4000)}\n\n`;
 
@@ -734,6 +750,7 @@ What single action should you take next?`;
 - NEVER use Google/Apple/Facebook login - use email/password instead
 - If you see a social login overlay, press Escape or find the X to close it
 - If the page seems stuck or has a paywall, use 'done' to move on
+- IMPORTANT: If a signup requires a phone number, ABORT immediately and use 'done' - we cannot handle phone verification
 - Use click_coordinates when element indexes fail (after seeing screenshot)
 Reply with a single tool call for your next action.`
       }

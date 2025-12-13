@@ -294,6 +294,51 @@ Make interests specific and varied (e.g., "urban photography", "indie music", "s
               persona.country = payload.country;
               persona.city = payload.city;
 
+              // Fetch a random address using Perplexity/Sonar (headless API call)
+              console.log('[BG] Fetching random address for persona...');
+              try {
+                const addressQuery = `${payload.city}, ${payload.country}, random, insignificant house numbers with their street names, federal states and ZIP codes.`;
+                const addressResponse = await llm.searchWithPerplexity(addressQuery);
+
+                // Parse the address from response - extract one clean address
+                const addressParseResponse = await llm.chat([
+                  { role: 'system', content: 'Extract address information from the text. Return ONLY valid JSON, no markdown.' },
+                  { role: 'user', content: `From this text, extract ONE random residential address (not a famous landmark or business).
+Text: ${addressResponse}
+
+Return ONLY this JSON (no citations, no special characters, plain text only):
+{
+  "streetAddress": "house number and street name",
+  "state": "state/province/region name",
+  "zipCode": "postal/ZIP code"
+}
+
+Example for New York: {"streetAddress": "247 West 38th Street", "state": "New York", "zipCode": "10018"}
+Pick an insignificant, ordinary address. Return ONLY the JSON.` }
+                ], personaSettings.model || 'anthropic/claude-sonnet-4', undefined, 0.3);
+
+                const addressMatch = (addressParseResponse.content || '').match(/\{[\s\S]*\}/);
+                if (addressMatch) {
+                  const addressData = JSON.parse(addressMatch[0]);
+                  // Clean up any citation markers or special characters
+                  persona.streetAddress = (addressData.streetAddress || '').replace(/\[\d+\]|\[|\]|[*#]/g, '').trim();
+                  persona.state = (addressData.state || '').replace(/\[\d+\]|\[|\]|[*#]/g, '').trim();
+                  persona.zipCode = (addressData.zipCode || '').replace(/\[\d+\]|\[|\]|[*#]/g, '').trim();
+                  console.log('[BG] Address set:', persona.streetAddress, persona.city, persona.state, persona.zipCode);
+                } else {
+                  // Fallback: generate a plausible address
+                  persona.streetAddress = `${100 + Math.floor(Math.random() * 900)} Main Street`;
+                  persona.state = payload.city;
+                  persona.zipCode = String(10000 + Math.floor(Math.random() * 89999));
+                  console.warn('[BG] Using fallback address');
+                }
+              } catch (addrErr) {
+                console.warn('[BG] Address lookup failed, using fallback:', addrErr);
+                persona.streetAddress = `${100 + Math.floor(Math.random() * 900)} Main Street`;
+                persona.state = payload.city;
+                persona.zipCode = String(10000 + Math.floor(Math.random() * 89999));
+              }
+
               // Also trigger URL discovery with Perplexity
               console.log('[BG] Persona generated, discovering URLs...');
               try {
