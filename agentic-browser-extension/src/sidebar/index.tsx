@@ -101,6 +101,15 @@ const ChevronIcon = ({ open }: { open: boolean }) => (
   </svg>
 );
 
+const RefreshIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+    <path d="M21 3v5h-5"></path>
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+    <path d="M3 21v-5h5"></path>
+  </svg>
+);
+
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Vollkorn:wght@500&display=swap');
 
@@ -914,7 +923,9 @@ function Sidebar() {
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
   const [cityConfirmed, setCityConfirmed] = useState(false);
   const [cityCheckFading, setCityCheckFading] = useState(false);
+  const [citySelectedFromAutocomplete, setCitySelectedFromAutocomplete] = useState(false);
   const [generatingPersona, setGeneratingPersona] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const cityInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1040,6 +1051,7 @@ function Sidebar() {
   const handleCityInput = async (value: string) => {
     setCity(value);
     setCityConfirmed(false);
+    setCitySelectedFromAutocomplete(false);
 
     if (value.length >= 2 && country) {
       try {
@@ -1064,7 +1076,9 @@ function Sidebar() {
   };
 
   const selectCity = (selectedCity: string) => {
+    setCitySelectedFromAutocomplete(true);
     setCity(selectedCity);
+    setCitySuggestions([]);
     setShowCitySuggestions(false);
     setCityConfirmed(true);
     setCityCheckFading(false);
@@ -1073,6 +1087,10 @@ function Sidebar() {
   };
 
   const confirmCity = () => {
+    // Skip reformatting if city was selected from autocomplete
+    if (citySelectedFromAutocomplete) {
+      return;
+    }
     if (city) {
       const formatted = city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
       setCity(formatted);
@@ -1120,6 +1138,20 @@ function Sidebar() {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Reset persona
+  const resetPersona = async () => {
+    setPersona(null);
+    setCountry('');
+    setCity('');
+    setCitySelectedFromAutocomplete(false);
+    setCityConfirmed(false);
+    setShowResetConfirm(false);
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_SETTINGS',
+      payload: { persona: null }
+    });
   };
 
   // Upload persona
@@ -1339,6 +1371,9 @@ function Sidebar() {
                 <button onClick={() => fileInputRef.current?.click()} title="Upload persona">
                   <UploadIcon />
                 </button>
+                <button onClick={() => setShowResetConfirm(true)} title="Create new persona">
+                  <RefreshIcon />
+                </button>
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -1444,6 +1479,27 @@ function Sidebar() {
               <button className="btn btn-primary" onClick={() => setShowSettings(true)}>
                 Open Settings
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Reset Persona Confirmation Overlay */}
+        {showResetConfirm && (
+          <div className="glass-overlay" onClick={() => setShowResetConfirm(false)}>
+            <div className="glass-card" onClick={e => e.stopPropagation()}>
+              <RefreshIcon />
+              <h2>Create New Persona?</h2>
+              <p>
+                Are you sure? This will delete the current persona.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                <button className="btn btn-secondary" onClick={() => setShowResetConfirm(false)} style={{ flex: 1 }}>
+                  No
+                </button>
+                <button className="btn btn-primary" onClick={resetPersona} style={{ flex: 1 }}>
+                  Yes
+                </button>
+              </div>
             </div>
           </div>
         )}

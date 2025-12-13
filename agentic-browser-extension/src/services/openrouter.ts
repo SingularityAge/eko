@@ -9,12 +9,13 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Fallback models in order of preference (vision-capable, reliable)
 const FALLBACK_MODELS = [
-  'anthropic/claude-sonnet-4',
-  'anthropic/claude-3.5-sonnet',
-  'openai/gpt-4o',
-  'openai/gpt-4o-mini',
-  'google/gemini-2.0-flash-exp:free',
-  'google/gemini-pro-vision'
+  'anthropic/claude-3.5-sonnet',        // Most reliable Claude model
+  'anthropic/claude-3-5-sonnet-20241022', // Alternative Claude ID
+  'openai/gpt-4o',                       // GPT-4 with vision
+  'openai/gpt-4o-mini',                  // Faster GPT-4
+  'google/gemini-flash-1.5',             // Fast Gemini
+  'google/gemini-pro-1.5',               // Standard Gemini
+  'meta-llama/llama-3.1-70b-instruct'    // Llama fallback
 ];
 
 export class OpenRouterService {
@@ -52,13 +53,8 @@ export class OpenRouterService {
         ...(m.tool_call_id && { tool_call_id: m.tool_call_id })
       })),
       temperature,
-      max_tokens: 4096,
-      // Allow fallback to any available provider
-      provider: {
-        allow_fallbacks: true,
-        // Don't require specific providers - let OpenRouter route to any available
-        order: ['anthropic', 'openai', 'google', 'together', 'fireworks']
-      }
+      max_tokens: 4096
+      // Note: Don't set 'provider' object - let OpenRouter auto-route to available providers
     };
 
     if (tools && tools.length > 0) {

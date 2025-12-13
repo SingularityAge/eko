@@ -210,6 +210,9 @@ export class AutonomousBrowserAgent {
   private currentActivity: { type: string; startTime: number } | null = null;
   private pauseEndTime: number = 0; // when current pause ends (0 = not paused)
 
+  // Initial test browsing period (3-6 minutes at session start)
+  private testPeriodEndTime: number = 0; // when test period ends (0 = no test period)
+
   constructor() {
     this.llm = getOpenRouter();
     this.state = {
@@ -282,6 +285,12 @@ export class AutonomousBrowserAgent {
       console.log('[AGENT] No persona set - using default browsing behavior');
       this.timezoneOffset = 0;
     }
+
+    // Initialize test browsing period (3-6 minutes randomized)
+    // This allows testing if browsing works even when persona should be sleeping
+    const testMinutes = 3 + Math.random() * 3; // 3-6 minutes
+    this.testPeriodEndTime = Date.now() + testMinutes * 60 * 1000;
+    console.log('[AGENT] Test browsing period: ', Math.round(testMinutes * 10) / 10, 'minutes before following schedule');
 
     // Initialize daily schedule for human-like behavior
     this.generateDailySchedule();
@@ -1032,6 +1041,18 @@ Reply with a single tool call for your next action.`
 
   // Check if currently in a scheduled pause and handle it
   private async checkAndHandlePause(): Promise<boolean> {
+    // Check if we're still in the initial test browsing period
+    // During test period, ignore all schedule-based pauses
+    if (this.testPeriodEndTime > 0) {
+      if (Date.now() < this.testPeriodEndTime) {
+        // Still in test period - keep browsing regardless of schedule
+        return false;
+      }
+      // Test period ended
+      console.log('[AGENT] Test browsing period complete, now following regular schedule');
+      this.testPeriodEndTime = 0;
+    }
+
     // If we're already in a pause, check if it's over
     if (this.pauseEndTime > 0) {
       if (Date.now() < this.pauseEndTime) {
