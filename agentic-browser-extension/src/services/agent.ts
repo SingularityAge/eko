@@ -25,10 +25,17 @@ const COUNTRY_TIMEZONES: Record<string, number> = {
 
 // Activity record for status history
 interface ActivityRecord {
-  type: 'sleep' | 'dinner' | 'shower' | 'break' | 'browsing';
+  type: 'sleep' | 'meal' | 'shower' | 'break' | 'browsing';
   startTime: number; // timestamp
   endTime: number;   // timestamp
   duration: number;  // minutes
+}
+
+// Meal schedule item
+interface MealSchedule {
+  type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  hour: number;
+  duration: number; // minutes
 }
 
 // Daily schedule
@@ -36,8 +43,7 @@ interface DailySchedule {
   date: string; // YYYY-MM-DD
   sleepStart: number; // hour in local time (e.g., 22 for 10pm)
   sleepDuration: number; // hours (6-9)
-  dinnerStart: number; // hour in local time
-  dinnerDuration: number; // minutes
+  meals: MealSchedule[]; // all meals including breakfast, lunch, dinner, snacks
   showerStart: number; // hour in local time
   showerDuration: number; // minutes
   breaks: { hour: number; duration: number }[]; // random breaks throughout day
@@ -1051,28 +1057,58 @@ Reply with a single tool call for your next action.`
     // Sleep: starts between 10pm-midnight, lasts 6-9 hours
     const sleepStart = 22 + Math.random() * 2; // 22:00-24:00
     const sleepDuration = 6 + Math.random() * 3; // 6-9 hours
+    const wakeUpHour = (sleepStart + sleepDuration) % 24;
 
-    // Dinner: between 6pm-8pm, lasts 20-45 minutes
+    // Meals schedule
+    const meals: MealSchedule[] = [];
+
+    // Breakfast: 30-60 min after waking, lasts 15-30 minutes
+    const breakfastStart = wakeUpHour + 0.5 + Math.random() * 0.5; // 30-60 min after wake
+    const breakfastDuration = 15 + Math.floor(Math.random() * 15); // 15-30 min
+    meals.push({ type: 'breakfast', hour: breakfastStart, duration: breakfastDuration });
+
+    // Lunch: between 12pm-2pm, lasts 20-40 minutes
+    const lunchStart = 12 + Math.random() * 2; // 12:00-14:00
+    const lunchDuration = 20 + Math.floor(Math.random() * 20); // 20-40 min
+    meals.push({ type: 'lunch', hour: lunchStart, duration: lunchDuration });
+
+    // Dinner: between 6pm-8pm, lasts 25-50 minutes
     const dinnerStart = 18 + Math.random() * 2; // 18:00-20:00
-    const dinnerDuration = 20 + Math.floor(Math.random() * 25); // 20-45 min
+    const dinnerDuration = 25 + Math.floor(Math.random() * 25); // 25-50 min
+    meals.push({ type: 'dinner', hour: dinnerStart, duration: dinnerDuration });
 
-    // Shower: morning (6-8am) or evening (8-10pm), lasts 10-20 minutes
+    // Snacks: 0-3 random snacks throughout the day, 5-15 minutes each
+    const numSnacks = Math.floor(Math.random() * 4); // 0-3 snacks
+    for (let i = 0; i < numSnacks; i++) {
+      // Place snacks between meals
+      const snackWindows = [
+        { start: breakfastStart + breakfastDuration / 60 + 1, end: lunchStart - 0.5 }, // mid-morning
+        { start: lunchStart + lunchDuration / 60 + 1, end: dinnerStart - 0.5 }, // afternoon
+        { start: dinnerStart + dinnerDuration / 60 + 1, end: sleepStart - 0.5 } // evening
+      ];
+      const window = snackWindows[i % snackWindows.length];
+      if (window.end > window.start) {
+        const snackHour = window.start + Math.random() * (window.end - window.start);
+        const snackDuration = 5 + Math.floor(Math.random() * 10); // 5-15 min
+        meals.push({ type: 'snack', hour: snackHour, duration: snackDuration });
+      }
+    }
+
+    // Shower: morning (after breakfast) or evening (before sleep), lasts 10-20 minutes
     const showerMorning = Math.random() < 0.5;
     const showerStart = showerMorning
-      ? 6 + Math.random() * 2  // 6:00-8:00
-      : 20 + Math.random() * 2; // 20:00-22:00
+      ? breakfastStart + breakfastDuration / 60 + 0.5 + Math.random() * 0.5 // after breakfast
+      : 20 + Math.random() * 1.5; // 20:00-21:30
     const showerDuration = 10 + Math.floor(Math.random() * 10); // 10-20 min
 
-    // Random breaks: 2-7 times per day, 3-10 minutes each
-    const numBreaks = 2 + Math.floor(Math.random() * 6); // 2-7 breaks
+    // Random breaks: 2-5 times per day, 3-10 minutes each
+    const numBreaks = 2 + Math.floor(Math.random() * 4); // 2-5 breaks
     const breaks: { hour: number; duration: number }[] = [];
 
-    // Distribute breaks throughout waking hours (after wake up until dinner)
-    const wakeUpHour = (sleepStart + sleepDuration) % 24;
+    // Distribute breaks throughout waking hours
     for (let i = 0; i < numBreaks; i++) {
-      // Spread breaks between wake up and sleep time
       const availableHours = dinnerStart - wakeUpHour;
-      const breakHour = wakeUpHour + (availableHours * (i + 1)) / (numBreaks + 1) + (Math.random() - 0.5);
+      const breakHour = wakeUpHour + 1 + (availableHours * (i + 1)) / (numBreaks + 1) + (Math.random() - 0.5);
       const breakDuration = 3 + Math.floor(Math.random() * 8); // 3-10 min
       breaks.push({ hour: breakHour, duration: breakDuration });
     }
@@ -1081,8 +1117,7 @@ Reply with a single tool call for your next action.`
       date: dateStr,
       sleepStart,
       sleepDuration,
-      dinnerStart,
-      dinnerDuration,
+      meals,
       showerStart,
       showerDuration,
       breaks
@@ -1091,7 +1126,7 @@ Reply with a single tool call for your next action.`
     console.log('[AGENT] Generated daily schedule:', {
       date: dateStr,
       sleep: `${Math.floor(sleepStart)}:${Math.floor((sleepStart % 1) * 60).toString().padStart(2, '0')} for ${sleepDuration.toFixed(1)}h`,
-      dinner: `${Math.floor(dinnerStart)}:${Math.floor((dinnerStart % 1) * 60).toString().padStart(2, '0')} for ${dinnerDuration}min`,
+      meals: meals.map(m => `${m.type} at ${Math.floor(m.hour)}:${Math.floor((m.hour % 1) * 60).toString().padStart(2, '0')} for ${m.duration}min`),
       shower: `${Math.floor(showerStart)}:${Math.floor((showerStart % 1) * 60).toString().padStart(2, '0')} for ${showerDuration}min`,
       breaks: breaks.length
     });
@@ -1119,7 +1154,7 @@ Reply with a single tool call for your next action.`
       // Pause ended - record it
       if (this.currentActivity) {
         this.recordActivity(
-          this.currentActivity.type as 'sleep' | 'dinner' | 'shower' | 'break',
+          this.currentActivity.type as 'sleep' | 'meal' | 'shower' | 'break',
           this.currentActivity.startTime,
           Date.now()
         );
@@ -1148,16 +1183,25 @@ Reply with a single tool call for your next action.`
       return true;
     }
 
-    // Check dinner time
-    const dinnerEnd = this.currentSchedule.dinnerStart + this.currentSchedule.dinnerDuration / 60;
-    if (this.isHourInRange(localHour, this.currentSchedule.dinnerStart, dinnerEnd)) {
-      const remainingMin = (dinnerEnd - localHour) * 60;
-      const pauseMs = remainingMin * 60 * 1000;
-      this.startPause('dinner', `Having dinner (${Math.round(remainingMin)}min remaining)`, pauseMs);
-      return true;
+    // Check all meals (breakfast, lunch, dinner, snacks)
+    for (const meal of this.currentSchedule.meals) {
+      const mealEnd = meal.hour + meal.duration / 60;
+      if (this.isHourInRange(localHour, meal.hour, mealEnd)) {
+        const remainingMin = (mealEnd - localHour) * 60;
+        const pauseMs = remainingMin * 60 * 1000;
+        const mealLabels: Record<string, string> = {
+          'breakfast': 'Having breakfast',
+          'lunch': 'Having lunch',
+          'dinner': 'Having dinner',
+          'snack': 'Having a snack'
+        };
+        const label = mealLabels[meal.type] || 'Eating';
+        this.startPause('meal', `${label} (${Math.round(remainingMin)}min remaining)`, pauseMs);
+        return true;
+      }
     }
 
-    // Check shower time (within 30 min window)
+    // Check shower time
     const showerEnd = this.currentSchedule.showerStart + this.currentSchedule.showerDuration / 60;
     if (this.isHourInRange(localHour, this.currentSchedule.showerStart, showerEnd)) {
       const remainingMin = (showerEnd - localHour) * 60;
@@ -1208,7 +1252,7 @@ Reply with a single tool call for your next action.`
   }
 
   // Record an activity to history
-  private recordActivity(type: 'sleep' | 'dinner' | 'shower' | 'break' | 'browsing', startTime: number, endTime: number): void {
+  private recordActivity(type: 'sleep' | 'meal' | 'shower' | 'break' | 'browsing', startTime: number, endTime: number): void {
     const duration = Math.round((endTime - startTime) / 60000); // minutes
     this.activityHistory.push({
       type,

@@ -1131,9 +1131,13 @@ function Sidebar() {
 
   // City autocomplete
   const handleCityInput = async (value: string) => {
+    // Don't trigger autocomplete if a city was already selected
+    if (citySelectedFromAutocomplete) {
+      return;
+    }
+
     setCity(value);
     setCityConfirmed(false);
-    setCitySelectedFromAutocomplete(false);
 
     console.log('[SIDEBAR] City input:', value, 'country:', country);
 
@@ -1165,6 +1169,7 @@ function Sidebar() {
   };
 
   const selectCity = (selectedCity: string) => {
+    console.log('[SIDEBAR] City selected from autocomplete:', selectedCity);
     setCitySelectedFromAutocomplete(true);
     setCity(selectedCity);
     setCitySuggestions([]);
@@ -1178,6 +1183,7 @@ function Sidebar() {
   const confirmCity = () => {
     // Skip reformatting if city was selected from autocomplete
     if (citySelectedFromAutocomplete) {
+      console.log('[SIDEBAR] Skipping confirmCity - already selected from autocomplete');
       return;
     }
     if (city) {
@@ -1191,6 +1197,14 @@ function Sidebar() {
       setCityCheckFading(false);
       setTimeout(() => setCityCheckFading(true), 100);
       setTimeout(() => setCityConfirmed(false), 2100);
+    }
+  };
+
+  // Reset city selection when user starts typing again
+  const handleCityFocus = () => {
+    if (citySelectedFromAutocomplete) {
+      // User is focusing back on the input - allow editing
+      setCitySelectedFromAutocomplete(false);
     }
   };
 
@@ -1414,21 +1428,33 @@ function Sidebar() {
 
   // Parse activity status from currentAction
   const parseActivityStatus = (action: string) => {
-    if (action.toLowerCase().includes('sleeping')) {
-      const match = action.match(/\(([^)]+)\)/);
-      return { type: 'sleeping', label: 'Sleeping', time: match ? match[1] : '', icon: <MoonIcon /> };
+    const lowerAction = action.toLowerCase();
+    const match = action.match(/\(([^)]+)\)/);
+    const time = match ? match[1] : '';
+
+    if (lowerAction.includes('sleeping')) {
+      return { type: 'sleeping', label: 'Sleeping', time, icon: <MoonIcon /> };
     }
-    if (action.toLowerCase().includes('dinner') || action.toLowerCase().includes('eating')) {
-      const match = action.match(/\(([^)]+)\)/);
-      return { type: 'eating', label: 'Having dinner', time: match ? match[1] : '', icon: <ForkKnifeIcon /> };
+    if (lowerAction.includes('breakfast')) {
+      return { type: 'eating', label: 'Having breakfast', time, icon: <ForkKnifeIcon /> };
     }
-    if (action.toLowerCase().includes('shower')) {
-      const match = action.match(/\(([^)]+)\)/);
-      return { type: 'showering', label: 'Taking a shower', time: match ? match[1] : '', icon: <ShowerIcon /> };
+    if (lowerAction.includes('lunch')) {
+      return { type: 'eating', label: 'Having lunch', time, icon: <ForkKnifeIcon /> };
     }
-    if (action.toLowerCase().includes('break')) {
-      const match = action.match(/\(([^)]+)\)/);
-      return { type: 'break', label: 'Taking a break', time: match ? match[1] : '', icon: <CoffeeIcon /> };
+    if (lowerAction.includes('dinner')) {
+      return { type: 'eating', label: 'Having dinner', time, icon: <ForkKnifeIcon /> };
+    }
+    if (lowerAction.includes('snack')) {
+      return { type: 'eating', label: 'Having a snack', time, icon: <ForkKnifeIcon /> };
+    }
+    if (lowerAction.includes('eating') || lowerAction.includes('meal')) {
+      return { type: 'eating', label: 'Having a meal', time, icon: <ForkKnifeIcon /> };
+    }
+    if (lowerAction.includes('shower')) {
+      return { type: 'showering', label: 'Taking a shower', time, icon: <ShowerIcon /> };
+    }
+    if (lowerAction.includes('break')) {
+      return { type: 'break', label: 'Taking a break', time, icon: <CoffeeIcon /> };
     }
     return null;
   };
@@ -1577,8 +1603,15 @@ function Sidebar() {
                     value={city}
                     disabled={!country}
                     onChange={(e) => handleCityInput(e.target.value)}
-                    onBlur={() => { setTimeout(() => setShowCitySuggestions(false), 200); confirmCity(); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') confirmCity(); }}
+                    onFocus={handleCityFocus}
+                    onBlur={() => {
+                      // Delay both actions to allow onMouseDown on suggestions to fire first
+                      setTimeout(() => {
+                        setShowCitySuggestions(false);
+                        confirmCity();
+                      }, 150);
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmCity(); } }}
                   />
                   <span className={`city-check ${cityConfirmed ? 'visible' : ''} ${cityCheckFading ? 'fade-out' : ''}`}>
                     <CheckIcon />
@@ -1586,7 +1619,16 @@ function Sidebar() {
                   {showCitySuggestions && citySuggestions.length > 0 && (
                     <div className="city-suggestions">
                       {citySuggestions.map((s, i) => (
-                        <div key={i} className="city-suggestion" onClick={() => selectCity(s)}>{s}</div>
+                        <div
+                          key={i}
+                          className="city-suggestion"
+                          onMouseDown={(e) => {
+                            e.preventDefault(); // Prevent input blur
+                            selectCity(s);
+                          }}
+                        >
+                          {s}
+                        </div>
                       ))}
                     </div>
                   )}
