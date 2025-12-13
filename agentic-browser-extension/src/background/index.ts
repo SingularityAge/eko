@@ -236,19 +236,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         case 'AUTOCOMPLETE_CITY':
           try {
+            console.log('[BG] Autocomplete request for:', payload.country, payload.query);
             const citySettings = await getSettings();
             if (!citySettings.openRouterApiKey) {
+              console.log('[BG] No API key for autocomplete');
               sendResponse({ cities: [] });
               break;
             }
             const llm = getOpenRouter(citySettings.openRouterApiKey);
+            console.log('[BG] Calling LLM for city suggestions...');
             const cityResponse = await llm.chat([
               { role: 'system', content: 'You are a geography assistant. Return ONLY a JSON array of city names, nothing else.' },
               { role: 'user', content: `List up to 5 cities in ${payload.country} that start with or contain "${payload.query}". Return ONLY a JSON array like ["City1", "City2"]. If no matches, return [].` }
             ], citySettings.model || 'anthropic/claude-sonnet-4', undefined, 0.3);
 
+            console.log('[BG] City response:', cityResponse.content?.slice(0, 200));
             const cityMatch = (cityResponse.content || '').match(/\[[\s\S]*?\]/);
             const cities = cityMatch ? JSON.parse(cityMatch[0]) : [];
+            console.log('[BG] Parsed cities:', cities);
             sendResponse({ cities: cities.slice(0, 5) });
           } catch (e) {
             console.error('[BG] City autocomplete error:', e);
@@ -258,12 +263,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         case 'GENERATE_PERSONA':
           try {
+            console.log('[BG] Generating persona for:', payload.city, payload.country);
             const personaSettings = await getSettings();
             if (!personaSettings.openRouterApiKey) {
+              console.error('[BG] No API key for persona generation');
               sendResponse({ error: 'No API key' });
               break;
             }
             const llm = getOpenRouter(personaSettings.openRouterApiKey);
+            console.log('[BG] Using model:', personaSettings.model || 'anthropic/claude-sonnet-4');
 
             const personaResponse = await llm.chat([
               { role: 'system', content: 'Generate a realistic persona for web browsing. Return ONLY valid JSON, no markdown or explanation.' },
@@ -283,11 +291,13 @@ Return ONLY this JSON structure:
 Make interests specific and varied (e.g., "urban photography", "indie music", "sustainable fashion", "board games", "hiking"). Return ONLY the JSON.` }
             ], personaSettings.model || 'anthropic/claude-sonnet-4', undefined, 0.9);
 
+            console.log('[BG] Persona response received:', personaResponse.content?.slice(0, 200));
             const personaMatch = (personaResponse.content || '').match(/\{[\s\S]*\}/);
             if (personaMatch) {
               const persona = JSON.parse(personaMatch[0]);
               persona.country = payload.country;
               persona.city = payload.city;
+              console.log('[BG] Parsed persona:', persona.firstName, persona.lastName);
 
               // Fetch a random address using Perplexity/Sonar (headless API call)
               console.log('[BG] Fetching random address for persona...');
@@ -359,7 +369,8 @@ Pick an insignificant, ordinary address. Return ONLY the JSON.` }
 
               sendResponse({ persona });
             } else {
-              sendResponse({ error: 'Failed to parse persona' });
+              console.error('[BG] Failed to parse persona from:', personaResponse.content);
+              sendResponse({ error: 'Failed to parse persona response' });
             }
           } catch (e) {
             console.error('[BG] Persona generation error:', e);

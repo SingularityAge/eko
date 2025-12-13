@@ -111,13 +111,13 @@ const RefreshIcon = () => (
 );
 
 const PlayIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="#2D2A26" stroke="none">
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="white" stroke="none">
     <polygon points="6,4 20,12 6,20" />
   </svg>
 );
 
 const PauseIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="#2D2A26" stroke="none">
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="white" stroke="none">
     <rect x="5" y="4" width="5" height="16" rx="1" />
     <rect x="14" y="4" width="5" height="16" rx="1" />
   </svg>
@@ -195,29 +195,32 @@ const styles = `
   }
 
   .play-pause-btn {
-    width: 52px;
-    height: 52px;
+    width: 60px;
+    height: 60px;
     border: none;
-    border-radius: 12px;
-    background: #FAF6F3;
-    border: 1px solid #E8E2DC;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #DA7756 0%, #C4684A 100%);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
     flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(218, 119, 86, 0.3);
   }
   .play-pause-btn:hover {
-    background: #F0EBE6;
-    border-color: #D4CFC9;
+    background: linear-gradient(135deg, #C4684A 0%, #B55D40 100%);
+    box-shadow: 0 4px 12px rgba(218, 119, 86, 0.4);
+    transform: translateY(-1px);
   }
   .play-pause-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
   }
   .play-pause-btn svg {
-    color: #2D2A26;
+    color: white;
   }
 
   .stats-inline {
@@ -228,7 +231,7 @@ const styles = `
 
   .stat-inline {
     background: white;
-    padding: 10px 16px;
+    padding: 8px 16px;
     border-radius: 10px;
     border: 1px solid rgba(218, 119, 86, 0.1);
     box-shadow: 0 2px 8px rgba(45, 42, 38, 0.04);
@@ -238,6 +241,7 @@ const styles = `
     justify-content: center;
     flex: 1;
     min-width: 0;
+    height: 60px;
   }
 
   .stat-inline-value {
@@ -1060,7 +1064,10 @@ function Sidebar() {
       return;
     }
     if (city) {
-      const formatted = city.charAt(0).toUpperCase() + city.slice(1).toLowerCase();
+      // Properly capitalize each word (e.g., "new york" -> "New York")
+      const formatted = city.split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
       setCity(formatted);
       setShowCitySuggestions(false);
       setCityConfirmed(true);
@@ -1075,6 +1082,9 @@ function Sidebar() {
     if (!country || !city || !apiKey) return;
 
     setGeneratingPersona(true);
+    // Update current action to show we're generating
+    setState(prev => ({ ...prev, currentAction: 'Generating browsing persona...' }));
+
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'GENERATE_PERSONA',
@@ -1087,9 +1097,14 @@ function Sidebar() {
           type: 'SAVE_SETTINGS',
           payload: { persona: response.persona }
         });
+        setState(prev => ({ ...prev, currentAction: 'Persona ready' }));
+      } else if (response?.error) {
+        console.error('Persona generation error:', response.error);
+        setState(prev => ({ ...prev, currentAction: `Error: ${response.error}` }));
       }
     } catch (e) {
       console.error('Failed to generate persona:', e);
+      setState(prev => ({ ...prev, currentAction: 'Failed to generate persona' }));
     }
     setGeneratingPersona(false);
   };
