@@ -1068,6 +1068,7 @@ function Sidebar() {
   const [cityConfirmed, setCityConfirmed] = useState(false);
   const [cityCheckFading, setCityCheckFading] = useState(false);
   const [citySelectedFromAutocomplete, setCitySelectedFromAutocomplete] = useState(false);
+  const citySelectedRef = useRef(false); // Ref to track selection (refs aren't captured in closures)
   const [generatingPersona, setGeneratingPersona] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const cityInputRef = useRef<HTMLInputElement>(null);
@@ -1201,7 +1202,7 @@ function Sidebar() {
   // City autocomplete
   const handleCityInput = async (value: string) => {
     // Don't trigger autocomplete if a city was already selected
-    if (citySelectedFromAutocomplete) {
+    if (citySelectedRef.current) {
       return;
     }
 
@@ -1217,6 +1218,13 @@ function Sidebar() {
           type: 'AUTOCOMPLETE_CITY',
           payload: { country, query: value }
         });
+
+        // Check ref again AFTER the await - user may have selected a city while we were waiting
+        if (citySelectedRef.current) {
+          console.log('[SIDEBAR] City was selected during API call, ignoring response');
+          return;
+        }
+
         console.log('[SIDEBAR] Autocomplete response:', response);
         if (response?.cities && response.cities.length > 0) {
           console.log('[SIDEBAR] Setting suggestions:', response.cities);
@@ -1239,6 +1247,7 @@ function Sidebar() {
 
   const selectCity = (selectedCity: string) => {
     console.log('[SIDEBAR] City selected from autocomplete:', selectedCity);
+    citySelectedRef.current = true; // Set ref immediately to block any pending API responses
     setCitySelectedFromAutocomplete(true);
     setCity(selectedCity);
     setCitySuggestions([]);
@@ -1271,8 +1280,9 @@ function Sidebar() {
 
   // Reset city selection when user starts typing again
   const handleCityFocus = () => {
-    if (citySelectedFromAutocomplete) {
+    if (citySelectedFromAutocomplete || citySelectedRef.current) {
       // User is focusing back on the input - allow editing
+      citySelectedRef.current = false;
       setCitySelectedFromAutocomplete(false);
     }
   };
@@ -1328,6 +1338,7 @@ function Sidebar() {
     setPersona(null);
     setCountry('');
     setCity('');
+    citySelectedRef.current = false;
     setCitySelectedFromAutocomplete(false);
     setCityConfirmed(false);
     setShowResetConfirm(false);
@@ -1684,7 +1695,7 @@ function Sidebar() {
               <div className="location-row">
                 <select
                   value={country}
-                  onChange={(e) => { setCountry(e.target.value); setCity(''); setCityConfirmed(false); }}
+                  onChange={(e) => { setCountry(e.target.value); setCity(''); citySelectedRef.current = false; setCitySelectedFromAutocomplete(false); setCityConfirmed(false); }}
                 >
                   <option value="">Select country...</option>
                   {COUNTRIES.map(c => (
