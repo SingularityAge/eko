@@ -123,6 +123,46 @@ const PauseIcon = () => (
   </svg>
 );
 
+// Activity status icons
+const MoonIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+  </svg>
+);
+
+const ForkKnifeIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"></path>
+    <path d="M7 2v20"></path>
+    <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"></path>
+  </svg>
+);
+
+const ShowerIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m4 4 2.5 2.5"></path>
+    <path d="M13.5 6.5a4.95 4.95 0 0 0-7 7"></path>
+    <path d="M15 5 5 15"></path>
+    <path d="M14 17v.01"></path>
+    <path d="M10 16v.01"></path>
+    <path d="M13 13v.01"></path>
+    <path d="M16 10v.01"></path>
+    <path d="M11 20v.01"></path>
+    <path d="M17 14v.01"></path>
+    <path d="M20 11v.01"></path>
+  </svg>
+);
+
+const CoffeeIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 8h1a4 4 0 1 1 0 8h-1"></path>
+    <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"></path>
+    <line x1="6" y1="2" x2="6" y2="4"></line>
+    <line x1="10" y1="2" x2="10" y2="4"></line>
+    <line x1="14" y1="2" x2="14" y2="4"></line>
+  </svg>
+);
+
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Vollkorn:wght@500&display=swap');
 
@@ -328,6 +368,48 @@ const styles = `
     font-size: 14px;
     color: #4A4641;
     word-break: break-word;
+  }
+
+  /* Activity Status Indicator */
+  .activity-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    animation: fadeIn 0.3s ease;
+  }
+  .activity-status.sleeping {
+    background: linear-gradient(135deg, #3D4A5D 0%, #2D3748 100%);
+    color: white;
+  }
+  .activity-status.eating {
+    background: linear-gradient(135deg, #C4884C 0%, #B37A40 100%);
+    color: white;
+  }
+  .activity-status.showering {
+    background: linear-gradient(135deg, #4A90A4 0%, #3D7A8F 100%);
+    color: white;
+  }
+  .activity-status.break {
+    background: linear-gradient(135deg, #5B8C5A 0%, #4A7A49 100%);
+    color: white;
+  }
+  .activity-icon {
+    font-size: 20px;
+  }
+  .activity-info {
+    flex: 1;
+  }
+  .activity-label {
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0.9;
+  }
+  .activity-time {
+    font-size: 12px;
+    opacity: 0.75;
   }
 
   .section-title {
@@ -679,6 +761,30 @@ const styles = `
     margin-top: 6px;
   }
 
+  .api-key-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .api-key-input-wrapper input {
+    padding-right: 36px;
+  }
+  .api-key-status {
+    position: absolute;
+    right: 12px;
+    font-size: 18px;
+    font-weight: bold;
+  }
+  .api-key-status.validating {
+    color: #9A938B;
+  }
+  .api-key-status.valid {
+    color: #5B8C5A;
+  }
+  .api-key-status.invalid {
+    color: #E57373;
+  }
+
   .model-confirm {
     display: flex;
     align-items: center;
@@ -922,6 +1028,8 @@ function Sidebar() {
   const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [modelConfirm, setModelConfirm] = useState('');
   const [loadingModels, setLoadingModels] = useState(false);
+  const [apiKeyValid, setApiKeyValid] = useState<boolean | null>(null); // null = not tested, true = valid, false = invalid
+  const [validatingApiKey, setValidatingApiKey] = useState(false);
 
   // Email settings for agent signups
   const [agentEmail, setAgentEmail] = useState('');
@@ -1189,18 +1297,48 @@ function Sidebar() {
   };
 
   const handleSaveSettings = async () => {
-    await chrome.runtime.sendMessage({
-      type: 'SAVE_SETTINGS',
-      payload: {
-        openRouterApiKey: apiKey,
-        model: selectedModel,
-        agentEmail,
-        agentEmailPassword
-      }
-    });
-    setHasApiKey(!!apiKey);
+    // Validate API key first
     if (apiKey) {
-      setShowSettings(false);
+      setValidatingApiKey(true);
+      setApiKeyValid(null);
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'VALIDATE_API_KEY',
+          payload: { apiKey }
+        });
+        if (response?.valid) {
+          setApiKeyValid(true);
+          await chrome.runtime.sendMessage({
+            type: 'SAVE_SETTINGS',
+            payload: {
+              openRouterApiKey: apiKey,
+              model: selectedModel,
+              agentEmail,
+              agentEmailPassword
+            }
+          });
+          setHasApiKey(true);
+          // Keep settings open briefly to show the green tick
+          setTimeout(() => setShowSettings(false), 1500);
+        } else {
+          setApiKeyValid(false);
+        }
+      } catch (e) {
+        console.error('API key validation failed:', e);
+        setApiKeyValid(false);
+      }
+      setValidatingApiKey(false);
+    } else {
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_SETTINGS',
+        payload: {
+          openRouterApiKey: apiKey,
+          model: selectedModel,
+          agentEmail,
+          agentEmailPassword
+        }
+      });
+      setHasApiKey(false);
     }
   };
 
@@ -1273,6 +1411,29 @@ function Sidebar() {
 
   const canStart = hasApiKey && state.status === 'idle' && persona;
   const locationSet = country && city;
+
+  // Parse activity status from currentAction
+  const parseActivityStatus = (action: string) => {
+    if (action.toLowerCase().includes('sleeping')) {
+      const match = action.match(/\(([^)]+)\)/);
+      return { type: 'sleeping', label: 'Sleeping', time: match ? match[1] : '', icon: <MoonIcon /> };
+    }
+    if (action.toLowerCase().includes('dinner') || action.toLowerCase().includes('eating')) {
+      const match = action.match(/\(([^)]+)\)/);
+      return { type: 'eating', label: 'Having dinner', time: match ? match[1] : '', icon: <ForkKnifeIcon /> };
+    }
+    if (action.toLowerCase().includes('shower')) {
+      const match = action.match(/\(([^)]+)\)/);
+      return { type: 'showering', label: 'Taking a shower', time: match ? match[1] : '', icon: <ShowerIcon /> };
+    }
+    if (action.toLowerCase().includes('break')) {
+      const match = action.match(/\(([^)]+)\)/);
+      return { type: 'break', label: 'Taking a break', time: match ? match[1] : '', icon: <CoffeeIcon /> };
+    }
+    return null;
+  };
+
+  const activityInfo = parseActivityStatus(state.currentAction);
 
   // Group models by provider
   const groupedModels = models.reduce((acc, model) => {
@@ -1347,10 +1508,21 @@ function Sidebar() {
           </div>
         </div>
 
+        {/* Activity Status Indicator (sleeping, eating, etc.) */}
+        {activityInfo && (
+          <div className={`activity-status ${activityInfo.type}`}>
+            <div className="activity-icon">{activityInfo.icon}</div>
+            <div className="activity-info">
+              <div className="activity-label">{activityInfo.label}</div>
+              {activityInfo.time && <div className="activity-time">{activityInfo.time}</div>}
+            </div>
+          </div>
+        )}
+
         {/* Current Action */}
         <div className="current-action">
           <div className="current-action-label">Current Action</div>
-          <div className="current-action-text">{state.currentAction || 'Idle'}</div>
+          <div className="current-action-text">{activityInfo ? 'Paused for activity' : (state.currentAction || 'Idle')}</div>
         </div>
 
         {/* Persona Box */}
@@ -1502,13 +1674,24 @@ function Sidebar() {
 
               <div className="form-group">
                 <label>OpenRouter API Key</label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={e => setApiKey(e.target.value)}
-                  placeholder="sk-or-..."
-                  autoFocus
-                />
+                <div className="api-key-input-wrapper">
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={e => { setApiKey(e.target.value); setApiKeyValid(null); }}
+                    placeholder="sk-or-..."
+                    autoFocus
+                  />
+                  {validatingApiKey && (
+                    <span className="api-key-status validating">...</span>
+                  )}
+                  {!validatingApiKey && apiKeyValid === true && (
+                    <span className="api-key-status valid">✓</span>
+                  )}
+                  {!validatingApiKey && apiKeyValid === false && (
+                    <span className="api-key-status invalid">✗</span>
+                  )}
+                </div>
                 <div className="hint">Get your key from openrouter.ai</div>
               </div>
 

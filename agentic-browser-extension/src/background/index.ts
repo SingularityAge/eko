@@ -205,6 +205,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ models });
           break;
 
+        case 'VALIDATE_API_KEY':
+          try {
+            console.log('[BG] Validating API key...');
+            const testLlm = getOpenRouter(payload.apiKey);
+            const testResponse = await testLlm.chat([
+              { role: 'user', content: 'Say "OK" and nothing else.' }
+            ], 'openai/gpt-4o-mini', undefined, 0);
+            console.log('[BG] API key validation response:', testResponse.content?.slice(0, 50));
+            sendResponse({ valid: true });
+          } catch (e) {
+            console.error('[BG] API key validation failed:', e);
+            sendResponse({ valid: false, error: String(e) });
+          }
+          break;
+
         case 'TRACK_TAB':
           scheduleTabCleanup(payload.tabId);
           sendResponse({ ok: true });
