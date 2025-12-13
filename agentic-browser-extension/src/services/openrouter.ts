@@ -1,13 +1,25 @@
 // ============================================
 // OpenRouter Service - Simple & Robust
+// With fallback handling and provider routing
 // ============================================
 
 import { LLMMessage, Tool, ToolCall } from '../shared/types';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
+// Fallback models in order of preference (vision-capable, reliable)
+const FALLBACK_MODELS = [
+  'anthropic/claude-sonnet-4',
+  'anthropic/claude-3.5-sonnet',
+  'openai/gpt-4o',
+  'openai/gpt-4o-mini',
+  'google/gemini-2.0-flash-exp:free',
+  'google/gemini-pro-vision'
+];
+
 export class OpenRouterService {
   private apiKey: string;
+  private lastWorkingModel: string | null = null;
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -21,14 +33,18 @@ export class OpenRouterService {
     messages: LLMMessage[],
     model: string,
     tools?: Tool[],
-    temperature: number = 0.7
+    temperature: number = 0.7,
+    retryCount: number = 0
   ): Promise<{ content: string | null; toolCalls: ToolCall[] | null }> {
     if (!this.apiKey) {
       throw new Error('OpenRouter API key not set');
     }
 
+    // Use last working model if available and current model failed before
+    const modelToUse = this.lastWorkingModel && retryCount > 0 ? this.lastWorkingModel : model;
+
     const body: any = {
-      model,
+      model: modelToUse,
       messages: messages.map(m => ({
         role: m.role,
         content: m.content,
@@ -36,7 +52,13 @@ export class OpenRouterService {
         ...(m.tool_call_id && { tool_call_id: m.tool_call_id })
       })),
       temperature,
-      max_tokens: 4096
+      max_tokens: 4096,
+      // Allow fallback to any available provider
+      provider: {
+        allow_fallbacks: true,
+        // Don't require specific providers - let OpenRouter route to any available
+        order: ['anthropic', 'openai', 'google', 'together', 'fireworks']
+      }
     };
 
     if (tools && tools.length > 0) {
@@ -44,38 +66,65 @@ export class OpenRouterService {
       body.tool_choice = 'auto';
     }
 
-    console.log('[OPENROUTER] Sending request to:', model);
+    console.log('[OPENROUTER] Sending request to:', modelToUse, '(retry:', retryCount, ')');
 
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-        'HTTP-Referer': 'chrome-extension://autobrowser',
-        'X-Title': 'AutoBrowser Extension'
-      },
-      body: JSON.stringify(body)
-    });
+    try {
+      const response = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+          'HTTP-Referer': 'chrome-extension://autobrowser',
+          'X-Title': 'AutoBrowser Extension'
+        },
+        body: JSON.stringify(body)
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[OPENROUTER] Error:', response.status, errorText);
-      throw new Error(`OpenRouter error ${response.status}: ${errorText.slice(0, 200)}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[OPENROUTER] Error:', response.status, errorText);
+
+        // If model not available (404), try fallback models
+        if (response.status === 404 && retryCount < FALLBACK_MODELS.length) {
+          const fallbackModel = FALLBACK_MODELS[retryCount];
+          console.log('[OPENROUTER] Model unavailable, trying fallback:', fallbackModel);
+          return this.chat(messages, fallbackModel, tools, temperature, retryCount + 1);
+        }
+
+        // If rate limited, wait and retry
+        if (response.status === 429 && retryCount < 3) {
+          console.log('[OPENROUTER] Rate limited, waiting 2s...');
+          await new Promise(r => setTimeout(r, 2000));
+          return this.chat(messages, model, tools, temperature, retryCount + 1);
+        }
+
+        throw new Error(`OpenRouter error ${response.status}: ${errorText.slice(0, 200)}`);
+      }
+
+      const data = await response.json();
+      const message = data.choices?.[0]?.message;
+
+      if (!message) {
+        throw new Error('No response from OpenRouter');
+      }
+
+      // Remember this model works
+      this.lastWorkingModel = modelToUse;
+      console.log('[OPENROUTER] Response received, content length:', message.content?.length || 0);
+
+      return {
+        content: message.content,
+        toolCalls: message.tool_calls || null
+      };
+    } catch (error) {
+      // Network error - try fallback
+      if (retryCount < FALLBACK_MODELS.length - 1) {
+        const fallbackModel = FALLBACK_MODELS[retryCount + 1];
+        console.log('[OPENROUTER] Error, trying fallback:', fallbackModel, error);
+        return this.chat(messages, fallbackModel, tools, temperature, retryCount + 1);
+      }
+      throw error;
     }
-
-    const data = await response.json();
-    const message = data.choices?.[0]?.message;
-
-    if (!message) {
-      throw new Error('No response from OpenRouter');
-    }
-
-    console.log('[OPENROUTER] Response received, content length:', message.content?.length || 0);
-
-    return {
-      content: message.content,
-      toolCalls: message.tool_calls || null
-    };
   }
 
   // Search with Perplexity model for URL discovery

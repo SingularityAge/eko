@@ -158,6 +158,11 @@ export class AutonomousBrowserAgent {
   private consecutiveFailures: number = 0;
   private useVisionMode: boolean = false;
 
+  // Randomization for natural behavior
+  private actionsOnCurrentPage: number = 0;
+  private scrollsOnCurrentPage: number = 0;
+  private sessionStartDelay: number = 0;
+
   constructor() {
     this.llm = getOpenRouter();
     this.state = {
@@ -210,8 +215,21 @@ export class AutonomousBrowserAgent {
     this.visitedUrls.clear();
     this.useVisionMode = false;
     this.consecutiveFailures = 0;
+    this.actionsOnCurrentPage = 0;
+    this.scrollsOnCurrentPage = 0;
 
-    this.updateState({ status: 'running', currentAction: 'Initializing...', totalActions: 0, errors: 0 });
+    // Random session start delay (0-30 seconds) for natural behavior
+    this.sessionStartDelay = Math.floor(Math.random() * 30000);
+    console.log('[AGENT] Session start delay:', this.sessionStartDelay, 'ms');
+
+    this.updateState({ status: 'running', currentAction: `Starting in ${Math.round(this.sessionStartDelay / 1000)}s...`, totalActions: 0, errors: 0 });
+
+    // Wait random delay before starting
+    if (this.sessionStartDelay > 0) {
+      await this.sleep(this.sessionStartDelay);
+    }
+
+    this.updateState({ currentAction: 'Initializing...' });
 
     // Use persona from settings (generated via sidebar)
     this.persona = settings.persona;
@@ -374,7 +392,8 @@ export class AutonomousBrowserAgent {
       ...defaultUrls
     ])];
 
-    this.urlQueue = allUrls;
+    // Shuffle URLs for randomized browsing order
+    this.urlQueue = this.shuffleArray(allUrls);
     console.log('[AGENT] ========================================');
     console.log('[AGENT] URL Queue ready:', this.urlQueue.length, 'URLs');
     console.log('[AGENT] First 5:', this.urlQueue.slice(0, 5).join(', '));
@@ -475,6 +494,12 @@ export class AutonomousBrowserAgent {
           const result = await this.executeAction(action.name, action.args);
           console.log('[AGENT] Action result:', result.slice(0, 100));
 
+          // Track actions on current page
+          this.actionsOnCurrentPage++;
+          if (action.name === 'scroll') {
+            this.scrollsOnCurrentPage++;
+          }
+
           // Check if action succeeded
           if (result.includes('Error')) {
             this.consecutiveFailures++;
@@ -502,19 +527,36 @@ export class AutonomousBrowserAgent {
         } else {
           console.log('[AGENT] No action from LLM, scrolling down');
           await this.executeAction('scroll', { direction: 'down', amount: 300 });
+          this.scrollsOnCurrentPage++;
         }
 
-        // Random chance to navigate to next URL (keeps browsing fresh)
-        if (loopIteration > 10 && Math.random() < 0.1) {
-          console.log('[AGENT] Random navigation to next URL');
+        // Random exploration: scroll more to explore the page (30% chance)
+        if (this.scrollsOnCurrentPage < 5 && Math.random() < 0.3) {
+          const direction = Math.random() < 0.7 ? 'down' : 'up';
+          const amount = 200 + Math.floor(Math.random() * 400);
+          console.log('[AGENT] Random exploration scroll:', direction, amount);
+          await this.executeAction('scroll', { direction, amount });
+          this.scrollsOnCurrentPage++;
+          await this.sleep(500 + Math.random() * 1000);
+        }
+
+        // Random chance to navigate to next URL (varies based on page engagement)
+        const minActionsBeforeNav = 5 + Math.floor(Math.random() * 10); // 5-15 actions before considering nav
+        const navChance = this.actionsOnCurrentPage > minActionsBeforeNav ? 0.15 : 0.05;
+        if (loopIteration > 5 && Math.random() < navChance) {
+          console.log('[AGENT] Random navigation to next URL (actions on page:', this.actionsOnCurrentPage, ')');
           await this.navigateToNextUrl();
           this.useVisionMode = false;
           this.consecutiveFailures = 0;
           this.sameStateCount = 0;
+          this.actionsOnCurrentPage = 0;
+          this.scrollsOnCurrentPage = 0;
         }
 
-        // Human-like pause
-        const pauseMs = 1000 + Math.random() * 2000;
+        // Human-like pause with more variance
+        const basePause = 800 + Math.random() * 1500;
+        const extraPause = Math.random() < 0.2 ? Math.random() * 3000 : 0; // Occasional longer pause
+        const pauseMs = basePause + extraPause;
         console.log('[AGENT] Pausing for', Math.round(pauseMs), 'ms');
         await this.sleep(pauseMs);
 
@@ -772,6 +814,16 @@ Reply with a single tool call for your next action.`
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Fisher-Yates shuffle for randomized browsing
+  private shuffleArray<T>(array: T[]): T[] {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
   }
 
   private estimateTokens(text: string): number {

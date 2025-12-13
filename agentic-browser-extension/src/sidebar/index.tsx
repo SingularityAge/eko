@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserState, Activity } from '../shared/types';
+import { BrowserState, Activity, Credential } from '../shared/types';
 
 // Country list (alphabetically sorted)
 const COUNTRIES = [
@@ -78,6 +78,26 @@ const UploadIcon = () => (
 const KeyIcon = () => (
   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#DA7756" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+  </svg>
+);
+
+const EmailIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"></polyline>
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+  </svg>
+);
+
+const ChevronIcon = ({ open }: { open: boolean }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+    <polyline points="6 9 12 15 18 9"></polyline>
   </svg>
 );
 
@@ -676,6 +696,187 @@ const styles = `
     font-size: 13px;
     color: #5B8C5A;
   }
+
+  /* Credentials Section */
+  .credentials-section {
+    margin-top: 16px;
+    border-top: 1px solid #E8E2DC;
+    padding-top: 16px;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .section-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #5A544D;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .icon-btn {
+    background: #FAF6F3;
+    border: 1px solid #E8E2DC;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    color: #7A746D;
+    transition: all 0.2s;
+  }
+  .icon-btn:hover {
+    background: #F0EBE6;
+    color: #5A544D;
+    border-color: #D4CFC9;
+  }
+
+  .cred-dropdown {
+    margin-bottom: 12px;
+  }
+
+  .cred-dropdown-btn {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #E8E2DC;
+    border-radius: 10px;
+    background: #FDFBFA;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    color: #4A4641;
+    transition: all 0.2s;
+  }
+  .cred-dropdown-btn:hover {
+    border-color: #DA7756;
+  }
+  .cred-dropdown-btn.open {
+    border-color: #DA7756;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .cred-dropdown-list {
+    border: 1px solid #DA7756;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    background: white;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  .cred-dropdown-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #4A4641;
+    transition: background 0.15s;
+    border-bottom: 1px solid #F0EBE6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .cred-dropdown-item:last-child {
+    border-bottom: none;
+  }
+  .cred-dropdown-item:hover {
+    background: #FDF8F6;
+  }
+  .cred-dropdown-item.selected {
+    background: rgba(218, 119, 86, 0.1);
+  }
+
+  .cred-delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: #B5AFA8;
+    transition: color 0.2s;
+    display: flex;
+  }
+  .cred-delete-btn:hover {
+    color: #E57373;
+  }
+
+  .cred-details {
+    background: #FAF8F6;
+    border: 1px solid #E8E2DC;
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 8px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .cred-detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 13px;
+  }
+  .cred-detail-row:not(:last-child) {
+    border-bottom: 1px solid #E8E2DC;
+  }
+
+  .cred-detail-label {
+    color: #9A938B;
+    font-weight: 500;
+  }
+
+  .cred-detail-value {
+    color: #4A4641;
+    font-family: monospace;
+    font-size: 12px;
+  }
+
+  .no-creds {
+    text-align: center;
+    padding: 16px;
+    color: #9A938B;
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  .email-section {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #E8E2DC;
+  }
+
+  .email-section h4 {
+    font-size: 13px;
+    font-weight: 500;
+    color: #7A746D;
+    margin: 0 0 10px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .input-row input {
+    flex: 1;
+  }
 `;
 
 interface OpenRouterModel {
@@ -724,6 +925,16 @@ function Sidebar() {
   const [modelConfirm, setModelConfirm] = useState('');
   const [loadingModels, setLoadingModels] = useState(false);
 
+  // Email settings for agent signups
+  const [agentEmail, setAgentEmail] = useState('');
+  const [agentEmailPassword, setAgentEmailPassword] = useState('');
+
+  // Website credentials state
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [credDropdownOpen, setCredDropdownOpen] = useState(false);
+  const [selectedCredId, setSelectedCredId] = useState<string | null>(null);
+  const credFileInputRef = useRef<HTMLInputElement>(null);
+
   const loadState = async () => {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_STATE' });
@@ -754,6 +965,8 @@ function Sidebar() {
         setApiKey(response.openRouterApiKey || '');
         setSelectedModel(response.model || 'anthropic/claude-sonnet-4');
         setHasApiKey(!!response.openRouterApiKey);
+        setAgentEmail(response.agentEmail || '');
+        setAgentEmailPassword(response.agentEmailPassword || '');
         if (response.persona) {
           setPersona(response.persona);
           setCountry(response.persona.country || '');
@@ -762,6 +975,17 @@ function Sidebar() {
       }
     } catch (e) {
       console.error('Failed to load settings:', e);
+    }
+  };
+
+  const loadCredentials = async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_CREDENTIALS' });
+      if (Array.isArray(response)) {
+        setCredentials(response);
+      }
+    } catch (e) {
+      console.error('Failed to load credentials:', e);
     }
   };
 
@@ -786,6 +1010,7 @@ function Sidebar() {
     loadState();
     loadActivities();
     loadSettings();
+    loadCredentials();
 
     const listener = (message: any) => {
       if (message.type === 'STATE_UPDATE') {
@@ -941,13 +1166,74 @@ function Sidebar() {
   const handleSaveSettings = async () => {
     await chrome.runtime.sendMessage({
       type: 'SAVE_SETTINGS',
-      payload: { openRouterApiKey: apiKey, model: selectedModel }
+      payload: {
+        openRouterApiKey: apiKey,
+        model: selectedModel,
+        agentEmail,
+        agentEmailPassword
+      }
     });
     setHasApiKey(!!apiKey);
     if (apiKey) {
       setShowSettings(false);
     }
   };
+
+  // Credentials management
+  const deleteCredential = async (credId: string) => {
+    const updated = credentials.filter(c => c.id !== credId);
+    setCredentials(updated);
+    await chrome.storage.local.set({ autobrowser_credentials: updated });
+    if (selectedCredId === credId) {
+      setSelectedCredId(null);
+    }
+  };
+
+  const downloadCredentials = () => {
+    if (credentials.length === 0) return;
+    const data = JSON.stringify(credentials, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `autobrowser_credentials_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const uploadCredentials = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (Array.isArray(data)) {
+          // Merge with existing credentials (replace duplicates by domain)
+          const merged = [...credentials];
+          for (const newCred of data) {
+            if (newCred.domain && (newCred.email || newCred.username) && newCred.password) {
+              const existingIdx = merged.findIndex(c => c.domain === newCred.domain);
+              if (existingIdx >= 0) {
+                merged[existingIdx] = newCred;
+              } else {
+                merged.push(newCred);
+              }
+            }
+          }
+          setCredentials(merged);
+          await chrome.storage.local.set({ autobrowser_credentials: merged });
+        }
+      } catch (e) {
+        console.error('Failed to parse credentials file:', e);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset input
+  };
+
+  const selectedCredential = credentials.find(c => c.id === selectedCredId);
 
   const handleModelChange = async (newModel: string) => {
     setSelectedModel(newModel);
@@ -1218,7 +1504,114 @@ function Sidebar() {
                 )}
               </div>
 
-              <button className="btn btn-primary" onClick={handleSaveSettings} style={{ width: '100%', marginTop: '8px' }}>
+              {/* Agent Email for Signups */}
+              <div className="email-section">
+                <h4><EmailIcon /> Agent Email</h4>
+                <div className="form-group" style={{ marginBottom: '8px' }}>
+                  <input
+                    type="email"
+                    value={agentEmail}
+                    onChange={e => setAgentEmail(e.target.value)}
+                    placeholder="agent@example.com"
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: '0' }}>
+                  <input
+                    type="password"
+                    value={agentEmailPassword}
+                    onChange={e => setAgentEmailPassword(e.target.value)}
+                    placeholder="Email password (for verification)"
+                  />
+                </div>
+                <div className="hint" style={{ marginTop: '6px' }}>Email the agent will use to sign up for services</div>
+              </div>
+
+              {/* Website Credentials */}
+              <div className="credentials-section">
+                <div className="section-header">
+                  <h3>Website Credentials</h3>
+                  <div className="section-actions">
+                    <button className="icon-btn" onClick={downloadCredentials} title="Download credentials" disabled={credentials.length === 0}>
+                      <DownloadIcon />
+                    </button>
+                    <button className="icon-btn" onClick={() => credFileInputRef.current?.click()} title="Upload credentials">
+                      <UploadIcon />
+                    </button>
+                    <input
+                      type="file"
+                      ref={credFileInputRef}
+                      style={{ display: 'none' }}
+                      accept=".json"
+                      onChange={uploadCredentials}
+                    />
+                  </div>
+                </div>
+
+                {credentials.length === 0 ? (
+                  <div className="no-creds">No saved credentials yet</div>
+                ) : (
+                  <>
+                    <div className="cred-dropdown">
+                      <button
+                        className={`cred-dropdown-btn ${credDropdownOpen ? 'open' : ''}`}
+                        onClick={() => setCredDropdownOpen(!credDropdownOpen)}
+                      >
+                        <span>{selectedCredential ? selectedCredential.domain : 'Select a website...'}</span>
+                        <ChevronIcon open={credDropdownOpen} />
+                      </button>
+                      {credDropdownOpen && (
+                        <div className="cred-dropdown-list">
+                          {credentials.map(cred => (
+                            <div
+                              key={cred.id}
+                              className={`cred-dropdown-item ${selectedCredId === cred.id ? 'selected' : ''}`}
+                              onClick={() => { setSelectedCredId(cred.id); setCredDropdownOpen(false); }}
+                            >
+                              <span>{cred.domain}</span>
+                              <button
+                                className="cred-delete-btn"
+                                onClick={(e) => { e.stopPropagation(); deleteCredential(cred.id); }}
+                                title="Delete credential"
+                              >
+                                <TrashIcon />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedCredential && (
+                      <div className="cred-details">
+                        {selectedCredential.email && (
+                          <div className="cred-detail-row">
+                            <span className="cred-detail-label">Email</span>
+                            <span className="cred-detail-value">{selectedCredential.email}</span>
+                          </div>
+                        )}
+                        {selectedCredential.username && (
+                          <div className="cred-detail-row">
+                            <span className="cred-detail-label">Username</span>
+                            <span className="cred-detail-value">{selectedCredential.username}</span>
+                          </div>
+                        )}
+                        <div className="cred-detail-row">
+                          <span className="cred-detail-label">Password</span>
+                          <span className="cred-detail-value">••••••••</span>
+                        </div>
+                        {selectedCredential.url && (
+                          <div className="cred-detail-row">
+                            <span className="cred-detail-label">URL</span>
+                            <span className="cred-detail-value" style={{ fontSize: '11px' }}>{selectedCredential.url}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <button className="btn btn-primary" onClick={handleSaveSettings} style={{ width: '100%', marginTop: '16px' }}>
                 Save Settings
               </button>
             </div>

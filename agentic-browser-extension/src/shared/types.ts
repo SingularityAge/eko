@@ -14,6 +14,12 @@ export interface Settings {
   persona: Persona | null;
   enabled: boolean;
   discoveredUrls?: string[];
+  // Agent email for signups
+  agentEmail?: string;
+  agentEmailPassword?: string;
+  // IMAP settings for email verification
+  imapHost?: string;
+  imapPort?: number;
 }
 
 export interface Persona {
