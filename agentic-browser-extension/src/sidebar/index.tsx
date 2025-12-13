@@ -370,19 +370,23 @@ const styles = `
 
   .persona-icons {
     display: flex;
-    gap: 6px;
+    gap: 5px;
   }
 
   .persona-icons button {
     background: #FAF6F3;
     border: 1px solid #E8E2DC;
     cursor: pointer;
-    padding: 8px;
-    border-radius: 8px;
+    padding: 6px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     color: #7A746D;
     transition: all 0.2s;
+  }
+  .persona-icons button svg {
+    width: 14px;
+    height: 14px;
   }
   .persona-icons button:hover {
     background: #F0EBE6;
