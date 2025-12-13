@@ -142,7 +142,7 @@ export class OpenRouterService {
 
     console.log('[OPENROUTER] Perplexity search:', query.slice(0, 50));
 
-    const result = await this.chat(messages, 'perplexity/sonar-pro', undefined, 0.3);
+    const result = await this.chat(messages, 'perplexity/sonar', undefined, 0.3);
     return result.content || '';
   }
 }

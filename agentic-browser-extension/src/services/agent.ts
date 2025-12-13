@@ -161,7 +161,6 @@ export class AutonomousBrowserAgent {
   // Randomization for natural behavior
   private actionsOnCurrentPage: number = 0;
   private scrollsOnCurrentPage: number = 0;
-  private sessionStartDelay: number = 0;
 
   constructor() {
     this.llm = getOpenRouter();
@@ -218,18 +217,7 @@ export class AutonomousBrowserAgent {
     this.actionsOnCurrentPage = 0;
     this.scrollsOnCurrentPage = 0;
 
-    // Random session start delay (0-30 seconds) for natural behavior
-    this.sessionStartDelay = Math.floor(Math.random() * 30000);
-    console.log('[AGENT] Session start delay:', this.sessionStartDelay, 'ms');
-
-    this.updateState({ status: 'running', currentAction: `Starting in ${Math.round(this.sessionStartDelay / 1000)}s...`, totalActions: 0, errors: 0 });
-
-    // Wait random delay before starting
-    if (this.sessionStartDelay > 0) {
-      await this.sleep(this.sessionStartDelay);
-    }
-
-    this.updateState({ currentAction: 'Initializing...' });
+    this.updateState({ status: 'running', currentAction: 'Initializing...', totalActions: 0, errors: 0 });
 
     // Use persona from settings (generated via sidebar)
     this.persona = settings.persona;
