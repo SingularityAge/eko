@@ -5,7 +5,7 @@
 // ============================================
 
 import { getOpenRouter, OpenRouterService } from './openrouter';
-import { getSettings, getCredentials, getCredentialByDomain, logActivity, extractDomain } from './storage';
+import { getSettings, getCredentials, getCredentialByDomain, extractDomain } from './storage';
 import { Tool, LLMMessage, Persona, BrowserState, Credential } from '../shared/types';
 
 // Timezone offsets by country (approximate, major timezone)
@@ -560,12 +560,6 @@ export class AutonomousBrowserAgent {
             }
           }
 
-          await logActivity({
-            type: this.mapActionToActivityType(action.name),
-            url: pageState.url,
-            details: `${action.name}: ${JSON.stringify(action.args).slice(0, 100)} -> ${result.slice(0, 100)}`
-          });
-
           this.updateState({ totalActions: this.state.totalActions + 1 });
           consecutiveErrors = 0;
         } else {
@@ -862,17 +856,6 @@ Reply with a single tool call for your next action.`
     }
   }
 
-  private mapActionToActivityType(action: string): 'navigation' | 'click' | 'type' | 'scroll' | 'search' | 'login' | 'signup' | 'error' {
-    switch (action) {
-      case 'navigate': return 'navigation';
-      case 'click': case 'click_coordinates': return 'click';
-      case 'type': return 'type';
-      case 'scroll': return 'scroll';
-      case 'search_bing': return 'search';
-      default: return 'click';
-    }
-  }
-
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
@@ -968,12 +951,6 @@ Reply with a single tool call for your next action.`
       // Reset page counters for search results page
       this.actionsOnCurrentPage = 0;
       this.scrollsOnCurrentPage = 0;
-
-      await logActivity({
-        type: 'search',
-        url: searchUrl,
-        details: `Bing search: ${query}`
-      });
     }
   }
 

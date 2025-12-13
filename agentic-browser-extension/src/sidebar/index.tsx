@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserState, Activity, Credential } from '../shared/types';
+import { BrowserState, Credential } from '../shared/types';
 
 // Country list (alphabetically sorted)
 const COUNTRIES = [
@@ -326,14 +326,6 @@ const styles = `
     word-break: break-word;
   }
 
-  .url-box {
-    background: #FAF8F6;
-    border: 1px solid #E8E2DC;
-    border-radius: 12px;
-    padding: 14px 16px;
-    margin-bottom: 16px;
-  }
-
   .section-title {
     font-size: 12px;
     font-weight: 600;
@@ -528,65 +520,6 @@ const styles = `
     color: #9A938B;
     margin-top: 8px;
     line-height: 1.6;
-  }
-
-  /* Activities */
-  .activities {
-    flex: 1;
-    overflow-y: auto;
-    max-height: 180px;
-    background: white;
-    border: 1px solid #E8E2DC;
-    border-radius: 12px;
-    padding: 4px;
-  }
-
-  .activity {
-    padding: 10px 12px;
-    border-radius: 8px;
-    font-size: 13px;
-    margin: 2px;
-    transition: background 0.15s;
-  }
-  .activity:hover {
-    background: #FAF8F6;
-  }
-
-  .activity-type {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 6px;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    margin-right: 8px;
-  }
-  .activity-type.navigation { background: #E3F2FD; color: #1976D2; }
-  .activity-type.click { background: #F3E5F5; color: #7B1FA2; }
-  .activity-type.type { background: #E8F5E9; color: #388E3C; }
-  .activity-type.scroll { background: #FFF3E0; color: #F57C00; }
-  .activity-type.search { background: #FCE4EC; color: #C2185B; }
-  .activity-type.error { background: #FFEBEE; color: #D32F2F; }
-
-  .activity-time {
-    color: #B5AFA8;
-    font-size: 11px;
-    float: right;
-  }
-
-  .activity-details {
-    margin-top: 4px;
-    color: #7A746D;
-    font-size: 12px;
-    line-height: 1.4;
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: 24px;
-    color: #9A938B;
-    font-size: 14px;
   }
 
   /* Glassmorphism Overlay */
@@ -961,7 +894,6 @@ function Sidebar() {
     errors: 0
   });
   const [hasApiKey, setHasApiKey] = useState(false);
-  const [activities, setActivities] = useState<Activity[]>([]);
   const [showSettings, setShowSettings] = useState(false);
 
   // Persona state
@@ -1004,17 +936,6 @@ function Sidebar() {
       }
     } catch (e) {
       console.error('Failed to load state:', e);
-    }
-  };
-
-  const loadActivities = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVITIES', payload: { limit: 15 } });
-      if (Array.isArray(response)) {
-        setActivities(response);
-      }
-    } catch (e) {
-      console.error('Failed to load activities:', e);
     }
   };
 
@@ -1068,7 +989,6 @@ function Sidebar() {
 
   useEffect(() => {
     loadState();
-    loadActivities();
     loadSettings();
     loadCredentials();
 
@@ -1081,7 +1001,6 @@ function Sidebar() {
 
     const interval = setInterval(() => {
       loadState();
-      loadActivities();
     }, 2000);
 
     return () => {
@@ -1328,10 +1247,6 @@ function Sidebar() {
     setTimeout(() => setModelConfirm(''), 3000);
   };
 
-  const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
   const canStart = hasApiKey && state.status === 'idle' && persona;
   const locationSet = country && city;
 
@@ -1413,13 +1328,6 @@ function Sidebar() {
           <div className="current-action-label">Current Action</div>
           <div className="current-action-text">{state.currentAction || 'Idle'}</div>
         </div>
-
-        {state.currentUrl && (
-          <div className="url-box">
-            <div className="current-action-label">Current URL</div>
-            <div className="current-action-text">{state.currentUrl}</div>
-          </div>
-        )}
 
         {/* Persona Box */}
         <div className="persona-box">
@@ -1515,22 +1423,6 @@ function Sidebar() {
                 <strong>Interests:</strong> {persona.interests.join(', ')}
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Recent Activity */}
-        <div className="section-title">Recent Activity</div>
-        <div className="activities">
-          {activities.length === 0 ? (
-            <div className="empty-state">No activity yet</div>
-          ) : (
-            activities.map(activity => (
-              <div className="activity" key={activity.id}>
-                <span className={`activity-type ${activity.type}`}>{activity.type}</span>
-                <span className="activity-time">{formatTime(activity.timestamp)}</span>
-                <div className="activity-details">{activity.details.slice(0, 80)}</div>
-              </div>
-            ))
           )}
         </div>
 

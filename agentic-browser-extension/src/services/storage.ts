@@ -2,7 +2,7 @@
 // Storage Service - Settings & Credentials
 // ============================================
 
-import { Settings, Credential, Activity, STORAGE_KEYS, DEFAULT_SETTINGS } from '../shared/types';
+import { Settings, Credential, STORAGE_KEYS, DEFAULT_SETTINGS } from '../shared/types';
 
 // Settings Management
 export async function getSettings(): Promise<Settings> {
@@ -77,37 +77,6 @@ export async function updateCredentialUsage(domain: string): Promise<void> {
   if (index >= 0) {
     credentials[index].lastUsed = Date.now();
     await chrome.storage.local.set({ [STORAGE_KEYS.CREDENTIALS]: credentials });
-  }
-}
-
-// Activities Log
-export async function logActivity(activity: Omit<Activity, 'id' | 'timestamp'>): Promise<void> {
-  try {
-    const result = await chrome.storage.local.get(STORAGE_KEYS.ACTIVITIES);
-    const activities: Activity[] = result[STORAGE_KEYS.ACTIVITIES] || [];
-
-    activities.unshift({
-      id: `act_${Date.now()}`,
-      timestamp: Date.now(),
-      ...activity
-    });
-
-    // Keep only last 500 activities
-    const trimmed = activities.slice(0, 500);
-    await chrome.storage.local.set({ [STORAGE_KEYS.ACTIVITIES]: trimmed });
-  } catch (error) {
-    console.error('[STORAGE] Failed to log activity:', error);
-  }
-}
-
-export async function getActivities(limit: number = 50): Promise<Activity[]> {
-  try {
-    const result = await chrome.storage.local.get(STORAGE_KEYS.ACTIVITIES);
-    const activities: Activity[] = result[STORAGE_KEYS.ACTIVITIES] || [];
-    return activities.slice(0, limit);
-  } catch (error) {
-    console.error('[STORAGE] Failed to get activities:', error);
-    return [];
   }
 }
 

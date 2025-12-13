@@ -4,8 +4,7 @@
 
 export const STORAGE_KEYS = {
   SETTINGS: 'autobrowser_settings',
-  CREDENTIALS: 'autobrowser_credentials',
-  ACTIVITIES: 'autobrowser_activities'
+  CREDENTIALS: 'autobrowser_credentials'
 } as const;
 
 export interface Settings {
@@ -45,14 +44,6 @@ export interface Credential {
   username?: string;
   createdAt: number;
   lastUsed?: number;
-}
-
-export interface Activity {
-  id: string;
-  type: 'navigation' | 'click' | 'type' | 'scroll' | 'search' | 'login' | 'signup' | 'error';
-  url?: string;
-  details: string;
-  timestamp: number;
 }
 
 export interface BrowserState {

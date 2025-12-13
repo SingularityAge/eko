@@ -3,7 +3,7 @@
 // ============================================
 
 import { getAgent } from '../services/agent';
-import { getSettings, saveSettings, getCredentials, getActivities, logActivity } from '../services/storage';
+import { getSettings, saveSettings, getCredentials } from '../services/storage';
 import { getOpenRouter } from '../services/openrouter';
 import { BrowserState } from '../shared/types';
 
@@ -198,11 +198,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'GET_CREDENTIALS':
           const creds = await getCredentials();
           sendResponse(creds);
-          break;
-
-        case 'GET_ACTIVITIES':
-          const activities = await getActivities(payload?.limit || 50);
-          sendResponse(activities);
           break;
 
         case 'FETCH_MODELS':
@@ -446,4 +441,3 @@ setInterval(() => {
 
 // Log startup
 console.log('[AUTOBROWSER] Background service worker started');
-logActivity({ type: 'navigation', details: 'Extension started' });
