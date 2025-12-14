@@ -1,7 +1,7 @@
 {
-  "name": "@eko-ai/agentic-browser-extension",
+  "name": "@autobrowser/extension",
   "version": "1.0.0",
-  "description": "AI-powered browsing agent that simulates authentic young US citizen web behavior",
+  "description": "Autonomous browser that browses the web naturally like a human",
   "private": true,
   "scripts": {
     "dev": "webpack --mode development --watch",

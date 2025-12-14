@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "AutoBrowser",
+  "name": "Autobrowser",
   "version": "1.0.0",
   "description": "Autonomous browser that browses the web naturally like a human",
   "permissions": [
@@ -33,7 +33,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "AutoBrowser"
+    "default_title": "Autobrowser"
   },
   "side_panel": {
     "default_path": "sidebar.html"
