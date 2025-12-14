@@ -855,7 +855,6 @@ const styles = `
     font-size: 12px;
     color: #9A938B;
     margin-top: 6px;
-    padding-left: 7px;
   }
   .form-group .hint a {
     color: #9A938B;
@@ -874,7 +873,6 @@ const styles = `
     font-weight: 500;
     color: #5A544D;
     margin-bottom: 6px;
-    padding-left: 5px;
   }
 
   /* Toggle Switch */
@@ -882,7 +880,6 @@ const styles = `
     display: flex;
     align-items: center;
     gap: 10px;
-    padding-left: 5px;
     margin-bottom: 6px;
   }
   .toggle-switch {
@@ -2102,7 +2099,7 @@ function Sidebar() {
                     {visionEnabled ? 'On' : 'Off'}
                   </span>
                 </div>
-                <div className="hint">Visual analysis can help the agent navigate, but is slower and more expensive</div>
+                <div className="hint" style={{ marginTop: '10px' }}>Visual analysis helps the Autobrowser navigate unusual pages, but is slower and more expensive.</div>
               </div>
 
               {/* Agent Email for Signups */}
