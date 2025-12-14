@@ -379,6 +379,47 @@ export class AutonomousBrowserAgent {
     };
   }
 
+  // Get current pause status with live remaining time
+  getPauseStatus(): { isPaused: boolean; type: string | null; remainingMs: number; message: string | null } {
+    if (this.pauseEndTime <= 0) {
+      return { isPaused: false, type: null, remainingMs: 0, message: null };
+    }
+
+    const remainingMs = Math.max(0, this.pauseEndTime - Date.now());
+    if (remainingMs <= 0) {
+      return { isPaused: false, type: null, remainingMs: 0, message: null };
+    }
+
+    const activityType = this.currentActivity?.type || 'break';
+
+    // Format remaining time
+    let timeStr: string;
+    if (remainingMs >= 3600000) {
+      const hours = remainingMs / 3600000;
+      timeStr = `${Math.round(hours * 10) / 10}h remaining`;
+    } else {
+      const mins = Math.ceil(remainingMs / 60000);
+      timeStr = `${mins}min remaining`;
+    }
+
+    // Generate message based on activity type
+    const messages: Record<string, string> = {
+      'sleep': 'Sleeping',
+      'meal': this.currentActivity?.type === 'meal' ? 'Having a meal' : 'Eating',
+      'breakfast': 'Having breakfast',
+      'lunch': 'Having lunch',
+      'dinner': 'Having dinner',
+      'snack': 'Having a snack',
+      'shower': 'Taking a shower',
+      'break': 'Taking a break'
+    };
+
+    const label = messages[activityType] || 'Paused';
+    const message = `${label} (${timeStr})`;
+
+    return { isPaused: true, type: activityType, remainingMs, message };
+  }
+
   // Handle tab being closed externally - recover by creating a new tab
   async handleTabClosed(): Promise<void> {
     console.log('[AGENT] Tab was closed, attempting recovery...');
@@ -513,18 +554,48 @@ export class AutonomousBrowserAgent {
       loopIteration++;
       console.log('[AGENT] --- Loop iteration', loopIteration, '---');
 
-      if (this.state.status === 'paused') {
-        console.log('[AGENT] Paused, waiting...');
+      // Check for activity pause status first (this updates the countdown)
+      const pauseStatus = this.getPauseStatus();
+      if (pauseStatus.isPaused && pauseStatus.message) {
+        // Update the countdown message
+        this.updateState({ status: 'paused', currentAction: pauseStatus.message });
+        await this.sleep(5000); // Check every 5 seconds during activity pauses
+        continue;
+      }
+
+      // If we were in an activity pause but it's now over, resume
+      if (this.pauseEndTime > 0 && Date.now() >= this.pauseEndTime) {
+        console.log('[AGENT] Activity pause ended, resuming...');
+        // Record the completed activity
+        if (this.currentActivity) {
+          // Map meal subtypes to 'meal' for activity recording
+          const activityType = ['breakfast', 'lunch', 'dinner', 'snack'].includes(this.currentActivity.type)
+            ? 'meal'
+            : this.currentActivity.type as 'sleep' | 'meal' | 'shower' | 'break';
+          this.recordActivity(
+            activityType,
+            this.currentActivity.startTime,
+            Date.now()
+          );
+          this.currentActivity = null;
+        }
+        this.pauseEndTime = 0;
+        this.updateState({ status: 'running', currentAction: 'Resuming browsing...' });
+      }
+
+      // Check for manual pause (user clicked pause button)
+      if (this.state.status === 'paused' && this.pauseEndTime === 0) {
+        console.log('[AGENT] Manually paused, waiting...');
         await this.sleep(1000);
         continue;
       }
 
       try {
-        // Check if we should be in a human-like pause (sleep, dinner, shower, break)
+        // Check if we should START a new human-like pause (sleep, dinner, shower, break)
         const isPaused = await this.checkAndHandlePause();
         if (isPaused) {
-          // During pause, sleep and check again
-          await this.sleep(60000); // Check every minute during pauses
+          // Pause just started, loop will handle countdown on next iteration
+          await this.sleep(1000);
           continue;
         }
 
@@ -1233,8 +1304,12 @@ Reply with a single tool call for your next action.`
       }
       // Pause ended - record it
       if (this.currentActivity) {
+        // Map meal subtypes to 'meal' for activity recording
+        const activityType = ['breakfast', 'lunch', 'dinner', 'snack'].includes(this.currentActivity.type)
+          ? 'meal'
+          : this.currentActivity.type as 'sleep' | 'meal' | 'shower' | 'break';
         this.recordActivity(
-          this.currentActivity.type as 'sleep' | 'meal' | 'shower' | 'break',
+          activityType,
           this.currentActivity.startTime,
           Date.now()
         );
@@ -1276,7 +1351,8 @@ Reply with a single tool call for your next action.`
           'snack': 'Having a snack'
         };
         const label = mealLabels[meal.type] || 'Eating';
-        this.startPause('meal', `${label} (${Math.round(remainingMin)}min remaining)`, pauseMs);
+        // Store the specific meal type (breakfast, lunch, etc.) for proper display
+        this.startPause(meal.type, `${label} (${Math.round(remainingMin)}min remaining)`, pauseMs);
         return true;
       }
     }
