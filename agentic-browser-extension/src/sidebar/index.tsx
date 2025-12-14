@@ -1964,7 +1964,7 @@ function Sidebar() {
                 </div>
               )}
               {generatingPersona && (
-                <div style={{ fontSize: '14px', color: '#9A938B', marginTop: '12px' }}>
+                <div style={{ fontSize: '14px', color: '#9A938B', marginTop: '12px', marginLeft: '5px' }}>
                   Generating persona...
                 </div>
               )}
