@@ -199,6 +199,7 @@ export class AutonomousBrowserAgent {
   private sameStateCount: number = 0;
   private consecutiveFailures: number = 0;
   private useVisionMode: boolean = false;
+  private visionEnabledSetting: boolean = false; // User setting - whether vision is allowed
 
   // Randomization for natural behavior
   private actionsOnCurrentPage: number = 0;
@@ -272,6 +273,8 @@ export class AutonomousBrowserAgent {
 
     this.llm.setApiKey(settings.openRouterApiKey);
     this.model = settings.model || 'anthropic/claude-sonnet-4';
+    this.visionEnabledSetting = settings.visionEnabled || false;
+    console.log('[AGENT] Vision analysis:', this.visionEnabledSetting ? 'enabled' : 'disabled');
     this.running = true;
     this.visitedUrls.clear();
     this.useVisionMode = false;
@@ -640,7 +643,7 @@ export class AutonomousBrowserAgent {
         if (stateHash === this.lastPageState) {
           this.sameStateCount++;
           console.log('[AGENT] Same state count:', this.sameStateCount);
-          if (this.sameStateCount >= 3) {
+          if (this.sameStateCount >= 3 && this.visionEnabledSetting) {
             console.log('[AGENT] Stuck state detected, switching to vision mode');
             this.useVisionMode = true;
           }
@@ -657,7 +660,10 @@ export class AutonomousBrowserAgent {
         let task: string;
         let screenshot: string | null = null;
 
-        if (this.useVisionMode) {
+        // Only use vision mode if setting is enabled
+        const useVision = this.useVisionMode && this.visionEnabledSetting;
+
+        if (useVision) {
           this.updateState({ currentAction: 'Taking screenshot for vision analysis...' });
           screenshot = await this.takeScreenshot();
           task = this.generateVisionTask(pageState, cred, screenshot);
@@ -666,7 +672,7 @@ export class AutonomousBrowserAgent {
         }
 
         // Get LLM decision (single step)
-        const thinkingMsg = this.useVisionMode ? 'Analyzing with vision...' : 'Thinking...';
+        const thinkingMsg = useVision ? 'Analyzing with vision...' : 'Thinking...';
         this.updateState({ currentAction: thinkingMsg });
         console.log('[AGENT] Calling LLM for next action...');
 
@@ -689,13 +695,13 @@ export class AutonomousBrowserAgent {
           if (result.includes('Error')) {
             this.consecutiveFailures++;
             console.log('[AGENT] Consecutive failures:', this.consecutiveFailures);
-            if (this.consecutiveFailures >= 3 && !this.useVisionMode) {
+            if (this.consecutiveFailures >= 3 && !this.useVisionMode && this.visionEnabledSetting) {
               console.log('[AGENT] 3 consecutive failures, switching to vision mode');
               this.useVisionMode = true;
             }
           } else {
             this.consecutiveFailures = 0;
-            if (this.useVisionMode) {
+            if (useVision) {
               // Vision mode succeeded, can try DOM mode again next time
               this.useVisionMode = false;
             }
