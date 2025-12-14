@@ -125,6 +125,13 @@ const WarningIcon = () => (
   </svg>
 );
 
+const EyeIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2D2A26" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+    <circle cx="12" cy="12" r="3"></circle>
+  </svg>
+);
+
 const TrashIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6"></polyline>
@@ -870,6 +877,49 @@ const styles = `
     padding-left: 5px;
   }
 
+  /* Toggle Switch */
+  .toggle-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-left: 5px;
+    margin-bottom: 6px;
+  }
+  .toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: #D4CFC9;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle-switch.on {
+    background: #DA7756;
+  }
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .toggle-switch.on::after {
+    transform: translateX(20px);
+  }
+  .toggle-label {
+    font-size: 13px;
+    color: #7A746D;
+  }
+  .toggle-label.on {
+    color: #DA7756;
+  }
+
   .provider-info {
     font-size: 13px;
     font-weight: 500;
@@ -1153,6 +1203,7 @@ function Sidebar() {
   const [loadingModels, setLoadingModels] = useState(false);
   const [apiKeyValid, setApiKeyValid] = useState<boolean | null>(null); // null = not tested, true = valid, false = invalid
   const [validatingApiKey, setValidatingApiKey] = useState(false);
+  const [visionEnabled, setVisionEnabled] = useState(false);
 
   // Schedule display
   const [schedule, setSchedule] = useState<{ meals: { type: string; time: string }[]; sleep: string; shower: string } | null>(null);
@@ -1188,6 +1239,7 @@ function Sidebar() {
         setApiKey(response.openRouterApiKey || '');
         setSelectedModel(response.model || 'anthropic/claude-sonnet-4');
         setHasApiKey(!!response.openRouterApiKey);
+        setVisionEnabled(response.visionEnabled || false);
         setAgentEmail(response.agentEmail || '');
         setAgentEmailPassword(response.agentEmailPassword || '');
         if (response.emailProvider) {
@@ -1655,6 +1707,15 @@ function Sidebar() {
     setTimeout(() => setModelConfirm(''), 3000);
   };
 
+  const handleVisionToggle = async () => {
+    const newValue = !visionEnabled;
+    setVisionEnabled(newValue);
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_SETTINGS',
+      payload: { visionEnabled: newValue }
+    });
+  };
+
   const canStart = hasApiKey && state.status === 'idle' && persona;
   const locationSet = country && city;
 
@@ -2027,6 +2088,21 @@ function Sidebar() {
                     <span>{modelConfirm} activated</span>
                   </div>
                 )}
+              </div>
+
+              {/* Vision Toggle */}
+              <div className="form-group">
+                <div className="settings-section-label"><EyeIcon /> Visual page analysis</div>
+                <div className="toggle-wrapper">
+                  <div
+                    className={`toggle-switch ${visionEnabled ? 'on' : ''}`}
+                    onClick={handleVisionToggle}
+                  />
+                  <span className={`toggle-label ${visionEnabled ? 'on' : ''}`}>
+                    {visionEnabled ? 'On' : 'Off'}
+                  </span>
+                </div>
+                <div className="hint">Visual analysis can help the agent navigate, but is slower and more expensive</div>
               </div>
 
               {/* Agent Email for Signups */}
