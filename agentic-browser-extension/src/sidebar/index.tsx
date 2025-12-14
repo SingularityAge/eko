@@ -2048,16 +2048,16 @@ function Sidebar() {
                     onChange={e => setAgentEmailPassword(e.target.value)}
                     placeholder="Password"
                   />
+                  <div className="hint">The agent's mailbox for signups and verifications</div>
+                  {detectingProvider && (
+                    <div className="provider-info" style={{ opacity: 0.6 }}>Detecting provider...</div>
+                  )}
+                  {!detectingProvider && emailProvider && (
+                    <div className="provider-info">
+                      Provider: <a href={emailProvider.loginUrl} target="_blank" rel="noopener noreferrer">{emailProvider.name}</a>
+                    </div>
+                  )}
                 </div>
-                <div className="hint">The agent's mailbox for signups and verifications</div>
-                {detectingProvider && (
-                  <div className="provider-info" style={{ opacity: 0.6 }}>Detecting provider...</div>
-                )}
-                {!detectingProvider && emailProvider && (
-                  <div className="provider-info">
-                    Provider: <a href={emailProvider.loginUrl} target="_blank" rel="noopener noreferrer">{emailProvider.name}</a>
-                  </div>
-                )}
               </div>
 
               {/* Website Credentials */}
