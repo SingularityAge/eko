@@ -88,6 +88,43 @@ const EmailIcon = () => (
   </svg>
 );
 
+// Settings section icons
+const SettingsKeyIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2D2A26" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+  </svg>
+);
+
+const ChipIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2D2A26" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+    <line x1="9" y1="5" x2="9" y2="2"></line>
+    <line x1="15" y1="5" x2="15" y2="2"></line>
+    <line x1="9" y1="22" x2="9" y2="19"></line>
+    <line x1="15" y1="22" x2="15" y2="19"></line>
+    <line x1="5" y1="9" x2="2" y2="9"></line>
+    <line x1="5" y1="15" x2="2" y2="15"></line>
+    <line x1="22" y1="9" x2="19" y2="9"></line>
+    <line x1="22" y1="15" x2="19" y2="15"></line>
+  </svg>
+);
+
+const GlobeIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2D2A26" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="2" y1="12" x2="22" y2="12"></line>
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+  </svg>
+);
+
+const WarningIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#DA7756" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+    <line x1="12" y1="9" x2="12" y2="13"></line>
+    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+  </svg>
+);
+
 const TrashIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6"></polyline>
@@ -761,6 +798,7 @@ const styles = `
     font-size: 22px;
     font-weight: 500;
     color: #2D2A26;
+    padding-left: 5px;
   }
 
   .modal-close {
@@ -810,6 +848,41 @@ const styles = `
     font-size: 12px;
     color: #9A938B;
     margin-top: 6px;
+    padding-left: 7px;
+  }
+  .form-group .hint a {
+    color: #9A938B;
+    text-decoration: underline;
+    transition: color 0.2s;
+  }
+  .form-group .hint a:hover {
+    color: #DA7756;
+  }
+
+  .settings-section-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #5A544D;
+    margin-bottom: 6px;
+    padding-left: 5px;
+  }
+
+  .provider-info {
+    font-size: 13px;
+    font-weight: 500;
+    color: #7A746D;
+    padding-left: 7px;
+    margin-top: 6px;
+  }
+  .provider-info a {
+    color: #DA7756;
+    text-decoration: none;
+  }
+  .provider-info a:hover {
+    text-decoration: underline;
   }
 
   .api-key-input-wrapper {
@@ -851,8 +924,6 @@ const styles = `
   /* Credentials Section */
   .credentials-section {
     margin-top: 16px;
-    border-top: 1px solid #E8E2DC;
-    padding-top: 16px;
   }
 
   .section-header {
@@ -863,13 +934,14 @@ const styles = `
   }
 
   .section-header h3 {
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 500;
     color: #5A544D;
     margin: 0;
     display: flex;
     align-items: center;
     gap: 8px;
+    padding-left: 5px;
   }
 
   .section-actions {
@@ -1005,18 +1077,17 @@ const styles = `
 
   .email-section {
     margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #E8E2DC;
   }
 
   .email-section h4 {
     font-size: 13px;
     font-weight: 500;
-    color: #7A746D;
+    color: #5A544D;
     margin: 0 0 10px 0;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    padding-left: 5px;
   }
 
   .input-row {
@@ -1089,6 +1160,8 @@ function Sidebar() {
   // Email settings for agent signups
   const [agentEmail, setAgentEmail] = useState('');
   const [agentEmailPassword, setAgentEmailPassword] = useState('');
+  const [emailProvider, setEmailProvider] = useState<{ name: string; loginUrl: string } | null>(null);
+  const [detectingProvider, setDetectingProvider] = useState(false);
 
   // Website credentials state
   const [credentials, setCredentials] = useState<Credential[]>([]);
@@ -1117,6 +1190,9 @@ function Sidebar() {
         setHasApiKey(!!response.openRouterApiKey);
         setAgentEmail(response.agentEmail || '');
         setAgentEmailPassword(response.agentEmailPassword || '');
+        if (response.emailProvider) {
+          setEmailProvider(response.emailProvider);
+        }
         if (response.persona) {
           setPersona(response.persona);
           setCountry(response.persona.country || '');
@@ -1126,6 +1202,82 @@ function Sidebar() {
     } catch (e) {
       console.error('Failed to load settings:', e);
     }
+  };
+
+  // Real-time API key validation
+  const validateApiKeyRealtime = async (key: string) => {
+    if (!key || key.length < 10) {
+      setApiKeyValid(null);
+      return;
+    }
+
+    setValidatingApiKey(true);
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'VALIDATE_API_KEY',
+        payload: { apiKey: key }
+      });
+      setApiKeyValid(response?.valid === true);
+    } catch (e) {
+      console.error('API key validation failed:', e);
+      setApiKeyValid(false);
+    }
+    setValidatingApiKey(false);
+  };
+
+  // Debounce API key validation
+  const apiKeyValidationTimeout = useRef<NodeJS.Timeout | null>(null);
+  const handleApiKeyChange = (key: string) => {
+    setApiKey(key);
+    setApiKeyValid(null);
+
+    // Clear existing timeout
+    if (apiKeyValidationTimeout.current) {
+      clearTimeout(apiKeyValidationTimeout.current);
+    }
+
+    // Debounce validation by 800ms
+    if (key.length >= 10) {
+      apiKeyValidationTimeout.current = setTimeout(() => {
+        validateApiKeyRealtime(key);
+      }, 800);
+    }
+  };
+
+  // Detect email provider from email address
+  const detectEmailProvider = async (email: string) => {
+    if (!email || !email.includes('@')) {
+      setEmailProvider(null);
+      return;
+    }
+
+    const domain = email.split('@')[1]?.toLowerCase();
+    if (!domain) {
+      setEmailProvider(null);
+      return;
+    }
+
+    setDetectingProvider(true);
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'DETECT_EMAIL_PROVIDER',
+        payload: { domain }
+      });
+      if (response?.provider) {
+        setEmailProvider(response.provider);
+        // Save provider info
+        await chrome.runtime.sendMessage({
+          type: 'SAVE_SETTINGS',
+          payload: { emailProvider: response.provider }
+        });
+      } else {
+        setEmailProvider(null);
+      }
+    } catch (e) {
+      console.error('Failed to detect email provider:', e);
+      setEmailProvider(null);
+    }
+    setDetectingProvider(false);
   };
 
   const loadCredentials = async () => {
@@ -1824,12 +1976,12 @@ function Sidebar() {
               </div>
 
               <div className="form-group">
-                <label>OpenRouter API Key</label>
+                <div className="settings-section-label"><SettingsKeyIcon /> OpenRouter API Key</div>
                 <div className="api-key-input-wrapper">
                   <input
                     type="password"
                     value={apiKey}
-                    onChange={e => { setApiKey(e.target.value); setApiKeyValid(null); }}
+                    onChange={e => handleApiKeyChange(e.target.value)}
                     placeholder="sk-or-..."
                     autoFocus
                   />
@@ -1837,17 +1989,17 @@ function Sidebar() {
                     <span className="api-key-status validating">...</span>
                   )}
                   {!validatingApiKey && apiKeyValid === true && (
-                    <span className="api-key-status valid">✓</span>
+                    <span className="api-key-status valid" title="Key valid"><CheckIcon /></span>
                   )}
                   {!validatingApiKey && apiKeyValid === false && (
-                    <span className="api-key-status invalid">✗</span>
+                    <span className="api-key-status invalid" title="Key invalid"><WarningIcon /></span>
                   )}
                 </div>
-                <div className="hint">Get your key from openrouter.ai</div>
+                <div className="hint">Get your key from <a href="https://openrouter.ai/" target="_blank" rel="noopener noreferrer">openrouter.ai</a></div>
               </div>
 
               <div className="form-group">
-                <label>Model</label>
+                <div className="settings-section-label"><ChipIcon /> Model</div>
                 {!apiKey ? (
                   <select disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
                     <option>Enter API key first...</option>
@@ -1885,6 +2037,7 @@ function Sidebar() {
                     type="email"
                     value={agentEmail}
                     onChange={e => setAgentEmail(e.target.value)}
+                    onBlur={() => detectEmailProvider(agentEmail)}
                     placeholder="agent@example.com"
                   />
                 </div>
@@ -1893,16 +2046,24 @@ function Sidebar() {
                     type="password"
                     value={agentEmailPassword}
                     onChange={e => setAgentEmailPassword(e.target.value)}
-                    placeholder="Email password (for verification)"
+                    placeholder="Password"
                   />
                 </div>
-                <div className="hint" style={{ marginTop: '6px' }}>Email the agent will use to sign up for services</div>
+                <div className="hint">The agent's mailbox for signups and verifications</div>
+                {detectingProvider && (
+                  <div className="provider-info" style={{ opacity: 0.6 }}>Detecting provider...</div>
+                )}
+                {!detectingProvider && emailProvider && (
+                  <div className="provider-info">
+                    Provider: <a href={emailProvider.loginUrl} target="_blank" rel="noopener noreferrer">{emailProvider.name}</a>
+                  </div>
+                )}
               </div>
 
               {/* Website Credentials */}
               <div className="credentials-section">
                 <div className="section-header">
-                  <h3>Website Credentials</h3>
+                  <h3><GlobeIcon /> Website Credentials</h3>
                   <div className="section-actions">
                     <button className="icon-btn" onClick={downloadCredentials} title="Download credentials" disabled={credentials.length === 0}>
                       <DownloadIcon />

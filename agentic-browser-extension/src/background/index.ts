@@ -216,6 +216,79 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           break;
 
+        case 'DETECT_EMAIL_PROVIDER':
+          try {
+            const domain = payload.domain;
+            console.log('[BG] Detecting email provider for domain:', domain);
+
+            // Common providers - fast lookup without API call
+            const knownProviders: Record<string, { name: string; loginUrl: string }> = {
+              'gmail.com': { name: 'Gmail', loginUrl: 'https://mail.google.com/' },
+              'googlemail.com': { name: 'Gmail', loginUrl: 'https://mail.google.com/' },
+              'outlook.com': { name: 'Outlook', loginUrl: 'https://outlook.live.com/' },
+              'hotmail.com': { name: 'Outlook', loginUrl: 'https://outlook.live.com/' },
+              'live.com': { name: 'Outlook', loginUrl: 'https://outlook.live.com/' },
+              'msn.com': { name: 'Outlook', loginUrl: 'https://outlook.live.com/' },
+              'yahoo.com': { name: 'Yahoo Mail', loginUrl: 'https://mail.yahoo.com/' },
+              'ymail.com': { name: 'Yahoo Mail', loginUrl: 'https://mail.yahoo.com/' },
+              'icloud.com': { name: 'iCloud Mail', loginUrl: 'https://www.icloud.com/mail/' },
+              'me.com': { name: 'iCloud Mail', loginUrl: 'https://www.icloud.com/mail/' },
+              'mac.com': { name: 'iCloud Mail', loginUrl: 'https://www.icloud.com/mail/' },
+              'proton.me': { name: 'Proton Mail', loginUrl: 'https://mail.proton.me/' },
+              'protonmail.com': { name: 'Proton Mail', loginUrl: 'https://mail.proton.me/' },
+              'pm.me': { name: 'Proton Mail', loginUrl: 'https://mail.proton.me/' },
+              'tutanota.com': { name: 'Tutanota', loginUrl: 'https://app.tuta.com/' },
+              'tuta.io': { name: 'Tutanota', loginUrl: 'https://app.tuta.com/' },
+              'zoho.com': { name: 'Zoho Mail', loginUrl: 'https://mail.zoho.com/' },
+              'aol.com': { name: 'AOL Mail', loginUrl: 'https://mail.aol.com/' },
+              'gmx.com': { name: 'GMX', loginUrl: 'https://www.gmx.com/' },
+              'gmx.net': { name: 'GMX', loginUrl: 'https://www.gmx.net/' },
+              'mail.com': { name: 'Mail.com', loginUrl: 'https://www.mail.com/' },
+              'fastmail.com': { name: 'Fastmail', loginUrl: 'https://www.fastmail.com/' },
+              'yandex.com': { name: 'Yandex Mail', loginUrl: 'https://mail.yandex.com/' },
+              'yandex.ru': { name: 'Yandex Mail', loginUrl: 'https://mail.yandex.ru/' },
+            };
+
+            if (knownProviders[domain]) {
+              sendResponse({ provider: knownProviders[domain] });
+              break;
+            }
+
+            // For unknown domains, try to detect using Perplexity/Sonar
+            const settings = await chrome.storage.local.get('autobrowser_settings');
+            const apiKey = settings.autobrowser_settings?.openRouterApiKey;
+            if (apiKey) {
+              const llm = getOpenRouter(apiKey);
+              const response = await llm.chat([
+                {
+                  role: 'user',
+                  content: `What is the email provider for the domain "${domain}"? Give me ONLY a JSON response with format: {"name": "Provider Name", "loginUrl": "https://login-url.com/"}. If unknown, respond with {"name": null}. Do not include any other text.`
+                }
+              ], 'perplexity/sonar', undefined, 0);
+
+              try {
+                const content = response.content?.trim() || '';
+                // Extract JSON from response
+                const jsonMatch = content.match(/\{[^}]+\}/);
+                if (jsonMatch) {
+                  const parsed = JSON.parse(jsonMatch[0]);
+                  if (parsed.name && parsed.loginUrl) {
+                    sendResponse({ provider: { name: parsed.name, loginUrl: parsed.loginUrl } });
+                    break;
+                  }
+                }
+              } catch (parseError) {
+                console.error('[BG] Failed to parse provider response:', parseError);
+              }
+            }
+
+            sendResponse({ provider: null });
+          } catch (e) {
+            console.error('[BG] Email provider detection failed:', e);
+            sendResponse({ provider: null, error: String(e) });
+          }
+          break;
+
         case 'TRACK_TAB':
           trackSecondaryTab(payload.tabId);
           sendResponse({ ok: true });
