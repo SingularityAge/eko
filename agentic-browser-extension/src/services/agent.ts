@@ -5,7 +5,7 @@
 // ============================================
 
 import { getOpenRouter, OpenRouterService } from './openrouter';
-import { getSettings, getCredentials, getCredentialByDomain, extractDomain } from './storage';
+import { getSettings, getCredentials, getCredentialByDomain, extractDomain, saveCredential } from './storage';
 import { Tool, LLMMessage, Persona, BrowserState, Credential } from '../shared/types';
 
 // Timezone offsets by country (approximate, major timezone)
@@ -21,6 +21,44 @@ const COUNTRY_TIMEZONES: Record<string, number> = {
   'Singapore': 8, 'Malaysia': 8, 'Philippines': 8, 'Indonesia': 7,
   'China': 8, 'Hong Kong': 8, 'Taiwan': 8, 'South Korea': 9, 'Japan': 9,
   'Australia': 10, 'New Zealand': 12
+};
+
+// Phone prefixes by country (country code + typical area codes)
+const COUNTRY_PHONE_PREFIXES: Record<string, { code: string; areaCodes: string[] }> = {
+  'United States': { code: '+1', areaCodes: ['212', '310', '415', '312', '305', '702', '206', '404', '617', '713'] },
+  'Canada': { code: '+1', areaCodes: ['416', '604', '514', '403', '613', '780', '250', '306'] },
+  'United Kingdom': { code: '+44', areaCodes: ['20', '121', '161', '141', '113', '117', '131', '151'] },
+  'Germany': { code: '+49', areaCodes: ['30', '40', '89', '69', '221', '211', '711', '341'] },
+  'France': { code: '+33', areaCodes: ['1', '4', '5', '6'] },
+  'Italy': { code: '+39', areaCodes: ['02', '06', '011', '051', '055', '081', '091'] },
+  'Spain': { code: '+34', areaCodes: ['91', '93', '96', '95', '94'] },
+  'Netherlands': { code: '+31', areaCodes: ['20', '10', '70', '30', '40'] },
+  'Australia': { code: '+61', areaCodes: ['2', '3', '7', '8'] },
+  'Japan': { code: '+81', areaCodes: ['3', '6', '52', '11', '45', '78'] },
+  'South Korea': { code: '+82', areaCodes: ['2', '51', '53', '62', '42'] },
+  'India': { code: '+91', areaCodes: ['11', '22', '33', '44', '80', '40'] },
+  'Brazil': { code: '+55', areaCodes: ['11', '21', '31', '41', '51', '61'] },
+  'Mexico': { code: '+52', areaCodes: ['55', '33', '81', '442', '664'] },
+  'China': { code: '+86', areaCodes: ['10', '21', '20', '755', '571', '28'] },
+  'Singapore': { code: '+65', areaCodes: ['6', '8', '9'] },
+  'Switzerland': { code: '+41', areaCodes: ['44', '22', '31', '61', '21'] },
+  'Austria': { code: '+43', areaCodes: ['1', '316', '512', '662', '732'] },
+  'Sweden': { code: '+46', areaCodes: ['8', '31', '40', '18', '90'] },
+  'Norway': { code: '+47', areaCodes: ['2', '4', '5', '6', '7'] },
+  'Denmark': { code: '+45', areaCodes: ['3', '4', '5', '6', '7', '8', '9'] },
+  'Poland': { code: '+48', areaCodes: ['22', '12', '61', '71', '58'] },
+  'Ireland': { code: '+353', areaCodes: ['1', '21', '61', '91', '51'] },
+  'New Zealand': { code: '+64', areaCodes: ['9', '4', '3', '7', '6'] },
+  'South Africa': { code: '+27', areaCodes: ['11', '21', '31', '41', '51'] },
+  'United Arab Emirates': { code: '+971', areaCodes: ['4', '2', '6', '7', '9'] },
+  'Israel': { code: '+972', areaCodes: ['3', '2', '4', '8', '9'] },
+  'Russia': { code: '+7', areaCodes: ['495', '812', '383', '343', '846'] },
+  'Turkey': { code: '+90', areaCodes: ['212', '216', '312', '232', '224'] },
+  'Thailand': { code: '+66', areaCodes: ['2', '53', '74', '38', '42'] },
+  'Vietnam': { code: '+84', areaCodes: ['24', '28', '236', '225', '263'] },
+  'Philippines': { code: '+63', areaCodes: ['2', '32', '82', '35', '45'] },
+  'Indonesia': { code: '+62', areaCodes: ['21', '22', '31', '61', '411'] },
+  'Malaysia': { code: '+60', areaCodes: ['3', '4', '7', '82', '88'] },
 };
 
 // Activity record for status history
@@ -225,6 +263,20 @@ export class AutonomousBrowserAgent {
   private targetAdClicks: number = 10 + Math.floor(Math.random() * 11); // 10-20
   private lastAdClickDate: string = ''; // YYYY-MM-DD to track day changes
 
+  // Email verification tracking
+  private pendingVerification: {
+    domain: string;          // Site we signed up on
+    signupTabId: number;     // Tab with the verification code input
+    email: string;           // Email used for signup
+    password: string;        // Password used for signup
+    startTime: number;       // When we started waiting
+  } | null = null;
+
+  // Agent email settings (for signups)
+  private agentEmail: string = '';
+  private agentEmailPassword: string = '';
+  private emailProviderUrl: string = '';
+
   constructor() {
     this.llm = getOpenRouter();
     this.state = {
@@ -255,6 +307,164 @@ export class AutonomousBrowserAgent {
     return this.tabId;
   }
 
+  // Generate a plausible phone number for the persona's country
+  private generatePhoneNumber(): string {
+    if (!this.persona) return '';
+
+    const country = this.persona.country;
+    const phoneData = COUNTRY_PHONE_PREFIXES[country];
+
+    if (!phoneData) {
+      // Fallback: generate a generic US number
+      const areaCode = Math.floor(200 + Math.random() * 800).toString();
+      const exchange = Math.floor(200 + Math.random() * 800).toString();
+      const subscriber = Math.floor(1000 + Math.random() * 9000).toString();
+      return `+1${areaCode}${exchange}${subscriber}`;
+    }
+
+    // Pick a random area code
+    const areaCode = phoneData.areaCodes[Math.floor(Math.random() * phoneData.areaCodes.length)];
+
+    // Generate subscriber number (remaining digits to make a valid number)
+    let subscriberLength = 7; // Most countries use 7 digits after area code
+    if (['United Kingdom', 'Germany', 'France'].includes(country)) subscriberLength = 8;
+    if (['Japan', 'South Korea'].includes(country)) subscriberLength = 8 - areaCode.length;
+
+    let subscriber = '';
+    for (let i = 0; i < subscriberLength; i++) {
+      subscriber += Math.floor(Math.random() * 10).toString();
+    }
+
+    return `${phoneData.code}${areaCode}${subscriber}`;
+  }
+
+  // Generate a password for signups
+  private generateSignupPassword(): string {
+    const words = ['Sun', 'Moon', 'Star', 'Cloud', 'Rain', 'Wind', 'Fire', 'Ice', 'Rock', 'Wave'];
+    const word1 = words[Math.floor(Math.random() * words.length)];
+    const word2 = words[Math.floor(Math.random() * words.length)];
+    const number = Math.floor(100 + Math.random() * 900);
+    const special = ['!', '@', '#', '$'][Math.floor(Math.random() * 4)];
+    return `${word1}${word2}${number}${special}`;
+  }
+
+  // Handle signup completion - save credentials
+  private async handleSignupComplete(domain: string, password: string): Promise<void> {
+    if (!this.agentEmail) return;
+
+    console.log('[AGENT] Saving credentials for:', domain);
+    this.updateState({ currentAction: `Saving credentials for ${domain}...` });
+
+    try {
+      await saveCredential({
+        domain,
+        url: `https://${domain}`,
+        email: this.agentEmail,
+        password
+      });
+      console.log('[AGENT] Credentials saved successfully');
+    } catch (e) {
+      console.error('[AGENT] Failed to save credentials:', e);
+    }
+  }
+
+  // Handle email verification - navigate to email provider to get verification code
+  private async handleEmailVerification(signupDomain: string): Promise<void> {
+    if (!this.agentEmail || !this.agentEmailPassword || !this.emailProviderUrl) {
+      console.log('[AGENT] Cannot verify email - missing email provider settings');
+      return;
+    }
+
+    console.log('[AGENT] Starting email verification for:', signupDomain);
+    this.updateState({ currentAction: 'Opening email to verify account...' });
+
+    // Save current tab as the one waiting for verification
+    this.pendingVerification = {
+      domain: signupDomain,
+      signupTabId: this.tabId || 0,
+      email: this.agentEmail,
+      password: '', // Will be set when we find the code
+      startTime: Date.now()
+    };
+
+    // Open email provider in a new tab
+    try {
+      const emailTab = await chrome.tabs.create({ url: this.emailProviderUrl, active: true });
+      if (emailTab.id) {
+        // Switch working tab to email
+        const oldTabId = this.tabId;
+        this.tabId = emailTab.id;
+        await this.focusTab();
+        await this.protectWorkingTab();
+
+        // The next iterations will navigate the email interface
+        console.log('[AGENT] Opened email provider, will look for verification email');
+        this.updateState({ currentAction: 'Logging into email...' });
+
+        // Store the signup tab ID for later return
+        if (oldTabId) {
+          this.pendingVerification.signupTabId = oldTabId;
+        }
+      }
+    } catch (e) {
+      console.error('[AGENT] Failed to open email provider:', e);
+      this.pendingVerification = null;
+    }
+  }
+
+  // Check if we're in email verification mode and should look for verification codes
+  private isInEmailVerificationMode(): boolean {
+    return this.pendingVerification !== null;
+  }
+
+  // Generate email-specific task when in verification mode
+  private generateEmailVerificationTask(pageState: { url: string; title: string; elements: string }): string {
+    const verification = this.pendingVerification!;
+
+    // Check if we have a code to enter (returned from email)
+    if (verification.password && verification.password.length > 0 && verification.password.length < 20) {
+      // We have a code - generate task to enter it on the signup page
+      return this.generateCodeEntryTask(pageState, verification.password);
+    }
+
+    let task = `You are checking email to find a verification code/link for ${verification.domain}.\n\n`;
+    task += `Current page: ${pageState.url}\nTitle: ${pageState.title}\n\n`;
+    task += `Email credentials:\n- Email: ${this.agentEmail}\n- Password: ${this.agentEmailPassword}\n\n`;
+    task += `Interactive elements:\n${pageState.elements.slice(0, 6000)}\n\n`;
+    task += `Instructions:
+1. If you see a login form, log in with the email credentials above
+2. Once logged in, look for recent emails from ${verification.domain} or with "verify", "confirm", "activation" in subject
+3. Open the verification email
+4. Look for:
+   - A verification CODE (usually 4-8 digits or characters)
+   - A verification LINK (a button or link saying "Verify", "Confirm", "Activate")
+5. If you find a CODE, respond with "VERIFICATION_CODE:XXXXXX" where XXXXXX is the code
+6. If you find a LINK, click it - it will verify the account directly
+7. If you clicked a link and see "verified" or "success", respond with "VERIFICATION_COMPLETE"
+8. Use 'done' if you can't find the email after scrolling through inbox
+
+What action should you take?`;
+    return task;
+  }
+
+  // Generate task for entering verification code on signup page
+  private generateCodeEntryTask(pageState: { url: string; title: string; elements: string }, code: string): string {
+    let task = `You need to enter a verification code to complete account signup.\n\n`;
+    task += `Current page: ${pageState.url}\nTitle: ${pageState.title}\n\n`;
+    task += `VERIFICATION CODE TO ENTER: ${code}\n\n`;
+    task += `Interactive elements:\n${pageState.elements.slice(0, 6000)}\n\n`;
+    task += `Instructions:
+1. Find the verification code input field (might be a single field or multiple digit boxes)
+2. Click on the first input field
+3. Type the verification code: ${code}
+4. If there's a "Verify" or "Submit" button, click it after entering the code
+5. Once verified successfully, say "VERIFICATION_COMPLETE" in your response
+6. If the page shows an error about invalid code, say "VERIFICATION_FAILED" in your response
+
+What action should you take?`;
+    return task;
+  }
+
   async start(): Promise<void> {
     if (this.running) {
       console.log('[AGENT] Already running');
@@ -275,6 +485,13 @@ export class AutonomousBrowserAgent {
     this.model = settings.model || 'anthropic/claude-sonnet-4';
     this.visionEnabledSetting = settings.visionEnabled || false;
     console.log('[AGENT] Vision analysis:', this.visionEnabledSetting ? 'enabled' : 'disabled');
+
+    // Load agent email settings for signups
+    this.agentEmail = settings.agentEmail || '';
+    this.agentEmailPassword = settings.agentEmailPassword || '';
+    this.emailProviderUrl = settings.emailProvider?.loginUrl || '';
+    console.log('[AGENT] Agent email:', this.agentEmail ? 'configured' : 'not configured');
+
     this.running = true;
     this.visitedUrls.clear();
     this.useVisionMode = false;
@@ -666,7 +883,10 @@ export class AutonomousBrowserAgent {
         this.visionEnabledSetting = currentSettings.visionEnabled || false;
         const useVision = this.useVisionMode && this.visionEnabledSetting;
 
-        if (useVision) {
+        // Use email verification task if we're in that mode
+        if (this.isInEmailVerificationMode()) {
+          task = this.generateEmailVerificationTask(pageState);
+        } else if (useVision) {
           this.updateState({ currentAction: 'Taking screenshot for vision analysis...' });
           screenshot = await this.takeScreenshot();
           task = this.generateVisionTask(pageState, cred, screenshot);
@@ -687,6 +907,37 @@ export class AutonomousBrowserAgent {
           this.updateState({ currentAction: `Executing: ${action.name}` });
           const result = await this.executeAction(action.name, action.args);
           console.log('[AGENT] Action result:', result.slice(0, 100));
+
+          // Parse signals from LLM response for signup/verification handling
+          if (action.responseText) {
+            const signals = this.parseSignals(action.responseText);
+
+            // Handle signup completion - save credentials
+            if (signals.signupComplete) {
+              const currentDomain = extractDomain(pageState.url);
+              console.log('[AGENT] Signup complete signal detected for:', currentDomain);
+              await this.handleSignupComplete(currentDomain, signals.signupComplete);
+            }
+
+            // Handle email verification request - open email provider
+            if (signals.needEmailVerification && !this.isInEmailVerificationMode()) {
+              const currentDomain = extractDomain(pageState.url);
+              console.log('[AGENT] Email verification needed for:', currentDomain);
+              await this.handleEmailVerification(currentDomain);
+            }
+
+            // Handle verification code found - return to signup tab
+            if (signals.verificationCode && this.isInEmailVerificationMode()) {
+              console.log('[AGENT] Verification code found:', signals.verificationCode);
+              await this.returnToSignupWithCode(signals.verificationCode);
+            }
+
+            // Handle verification complete (clicked link in email)
+            if (signals.verificationComplete && this.isInEmailVerificationMode()) {
+              console.log('[AGENT] Verification completed via link');
+              await this.completeVerification();
+            }
+          }
 
           // Track actions on current page
           this.actionsOnCurrentPage++;
@@ -890,11 +1141,24 @@ export class AutonomousBrowserAgent {
       if (this.persona.streetAddress) {
         task += `Address: ${this.persona.streetAddress}, ${this.persona.city}, ${this.persona.state} ${this.persona.zipCode}, ${this.persona.country}\n`;
       }
+      // Include phone number for signups
+      const phoneNumber = this.generatePhoneNumber();
+      if (phoneNumber) {
+        task += `Phone: ${phoneNumber}\n`;
+      }
       task += '\n';
     }
 
+    // If we have existing credentials for this site, use them
     if (credential) {
       task += `You have an account on this site:\n- Email: ${credential.email}\n- Password: ${credential.password}\nIf you see a login form, log in with these credentials.\n\n`;
+    } else if (this.agentEmail) {
+      // For signups on new sites
+      const signupPassword = this.generateSignupPassword();
+      task += `SIGNUP CREDENTIALS (for creating new accounts):\n`;
+      task += `- Email: ${this.agentEmail}\n`;
+      task += `- Password to use: ${signupPassword}\n`;
+      task += `Remember: After successful signup, say "SIGNUP_COMPLETE:${signupPassword}" so the credentials are saved.\n\n`;
     }
 
     task += `Interactive elements on page:\n${pageState.elements.slice(0, 8000)}\n\n`;
@@ -906,11 +1170,20 @@ export class AutonomousBrowserAgent {
 - Browse naturally like a human
 - Accept cookie popups immediately (click Accept/Allow/OK)
 - Close any Google/Apple/Facebook login popups (press_escape or click close/X)
-- Never use social login buttons - only email/password
+- Never use social login buttons - only email/password signup
 - If stuck on a paywall, use 'done' to move on
 - Use 'done' when finished with current site
-- IMPORTANT: If a signup form requires a phone number, ABORT the signup immediately and use 'done' to move on
-- When filling address forms, use the persona's address data`;
+- When filling address forms, use the persona's address data
+- If a signup form asks for a phone number (NOT for verification, just as optional field), use the provided phone number
+- If phone SMS verification is REQUIRED, skip the signup and use 'done'`;
+
+    // Signup and verification instructions
+    if (this.agentEmail && !credential) {
+      task += `
+- SIGNUP: If you see a registration/signup form and want to create an account, use the signup credentials above
+- After completing signup, include "SIGNUP_COMPLETE:<password>" in your response so credentials are saved
+- If email verification is needed and you see a "check your email" message or verification code input, say "NEED_EMAIL_VERIFICATION" in your response`;
+    }
 
     if (shouldInteractWithAds) {
       task += `
@@ -963,7 +1236,7 @@ What single action should you take next?`;
     return task;
   }
 
-  private async getNextAction(task: string, pageState: { url: string }, screenshot: string | null): Promise<{ name: string; args: any } | null> {
+  private async getNextAction(task: string, pageState: { url: string }, screenshot: string | null): Promise<{ name: string; args: any; responseText?: string } | null> {
     const messages: LLMMessage[] = [
       {
         role: 'system',
@@ -977,6 +1250,9 @@ What single action should you take next?`;
 - When instructed to engage with ads: click on interesting ads, sponsored posts, or promotional content
 - When completing surveys: provide plausible, consistent opinions matching the persona's demographics and interests
 - Watch sponsored videos briefly when encountered
+- SIGNUP SIGNALS: After completing a signup, include "SIGNUP_COMPLETE:<password>" in your response
+- EMAIL VERIFICATION: If you see a "check your email" message or verification code input, include "NEED_EMAIL_VERIFICATION" in your response
+- VERIFICATION CODE: When you find a verification code in email, include "VERIFICATION_CODE:XXXXXX" in your response
 Reply with a single tool call for your next action.`
       }
     ];
@@ -1012,14 +1288,105 @@ Reply with a single tool call for your next action.`
           content: `Action: ${tc.function.name}(${JSON.stringify(args)})`
         });
 
-        return { name: tc.function.name, args };
+        // Return action with response text for signal detection
+        return { name: tc.function.name, args, responseText: response.content || '' };
       }
 
-      return { name: 'scroll', args: { direction: 'down', amount: 300 } };
+      // Return default scroll with response text
+      return { name: 'scroll', args: { direction: 'down', amount: 300 }, responseText: response.content || '' };
     } catch (e) {
       console.error('[AGENT] LLM error:', e);
       throw e;
     }
+  }
+
+  // Parse signals from LLM response for signup/verification handling
+  private parseSignals(responseText: string): {
+    signupComplete?: string;
+    needEmailVerification?: boolean;
+    verificationCode?: string;
+    verificationComplete?: boolean;
+  } {
+    const signals: {
+      signupComplete?: string;
+      needEmailVerification?: boolean;
+      verificationCode?: string;
+      verificationComplete?: boolean;
+    } = {};
+
+    // Check for signup completion with password
+    const signupMatch = responseText.match(/SIGNUP_COMPLETE:(\S+)/);
+    if (signupMatch) {
+      signals.signupComplete = signupMatch[1];
+    }
+
+    // Check for email verification needed
+    if (responseText.includes('NEED_EMAIL_VERIFICATION')) {
+      signals.needEmailVerification = true;
+    }
+
+    // Check for verification code found
+    const codeMatch = responseText.match(/VERIFICATION_CODE:(\S+)/);
+    if (codeMatch) {
+      signals.verificationCode = codeMatch[1];
+    }
+
+    // Check for verification complete (clicked link)
+    if (responseText.includes('VERIFICATION_COMPLETE')) {
+      signals.verificationComplete = true;
+    }
+
+    return signals;
+  }
+
+  // Handle returning to signup tab with verification code
+  private async returnToSignupWithCode(code: string): Promise<void> {
+    if (!this.pendingVerification) {
+      console.log('[AGENT] No pending verification to return to');
+      return;
+    }
+
+    console.log('[AGENT] Returning to signup tab with code:', code);
+    this.updateState({ currentAction: `Entering verification code: ${code}` });
+
+    try {
+      // Store the verification info
+      const verification = this.pendingVerification;
+
+      // Close the email tab (current tab)
+      if (this.tabId) {
+        await chrome.tabs.remove(this.tabId);
+      }
+
+      // Switch back to signup tab
+      this.tabId = verification.signupTabId;
+      await this.focusTab();
+      await this.protectWorkingTab();
+
+      // Store the code for the agent to use in the next iteration
+      // The task will include instructions to enter this code
+      this.pendingVerification = {
+        ...verification,
+        password: code // Temporarily store code in password field
+      };
+
+      console.log('[AGENT] Switched back to signup tab, will enter code on next iteration');
+    } catch (e) {
+      console.error('[AGENT] Failed to return to signup tab:', e);
+      this.pendingVerification = null;
+    }
+  }
+
+  // Complete the verification process
+  private async completeVerification(): Promise<void> {
+    if (!this.pendingVerification) return;
+
+    console.log('[AGENT] Verification completed for:', this.pendingVerification.domain);
+
+    // Clear pending verification
+    this.pendingVerification = null;
+
+    this.updateState({ currentAction: 'Email verification completed!' });
   }
 
   private async executeAction(name: string, args: any): Promise<string> {
