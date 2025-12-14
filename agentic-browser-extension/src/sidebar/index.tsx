@@ -2053,7 +2053,7 @@ function Sidebar() {
                     <span className="api-key-status invalid" title="Key invalid"><WarningIcon /></span>
                   )}
                 </div>
-                <div className="hint">Get your key from <a href="https://openrouter.ai/" target="_blank" rel="noopener noreferrer">openrouter.ai</a></div>
+                <div className="hint">Get your key from <a href="https://openrouter.ai/" target="_blank" rel="noopener noreferrer">OpenRouter</a>.</div>
               </div>
 
               <div className="form-group">
@@ -2121,7 +2121,7 @@ function Sidebar() {
                     onChange={e => setAgentEmailPassword(e.target.value)}
                     placeholder="Password"
                   />
-                  <div className="hint">The agent's mailbox for signups and verifications</div>
+                  <div className="hint">Autobrowser needs a dedicated mailbox for signups.</div>
                   {detectingProvider && (
                     <div className="provider-info" style={{ opacity: 0.6 }}>Detecting provider...</div>
                   )}
