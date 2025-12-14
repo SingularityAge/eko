@@ -643,8 +643,9 @@ export class AutonomousBrowserAgent {
         if (stateHash === this.lastPageState) {
           this.sameStateCount++;
           console.log('[AGENT] Same state count:', this.sameStateCount);
-          if (this.sameStateCount >= 3 && this.visionEnabledSetting) {
-            console.log('[AGENT] Stuck state detected, switching to vision mode');
+          if (this.sameStateCount >= 3) {
+            // Will check visionEnabledSetting dynamically when needed
+            console.log('[AGENT] Stuck state detected, marking for potential vision mode');
             this.useVisionMode = true;
           }
         } else {
@@ -660,7 +661,9 @@ export class AutonomousBrowserAgent {
         let task: string;
         let screenshot: string | null = null;
 
-        // Only use vision mode if setting is enabled
+        // Check vision setting dynamically (allows toggling without restart)
+        const currentSettings = await getSettings();
+        this.visionEnabledSetting = currentSettings.visionEnabled || false;
         const useVision = this.useVisionMode && this.visionEnabledSetting;
 
         if (useVision) {
@@ -695,8 +698,9 @@ export class AutonomousBrowserAgent {
           if (result.includes('Error')) {
             this.consecutiveFailures++;
             console.log('[AGENT] Consecutive failures:', this.consecutiveFailures);
-            if (this.consecutiveFailures >= 3 && !this.useVisionMode && this.visionEnabledSetting) {
-              console.log('[AGENT] 3 consecutive failures, switching to vision mode');
+            if (this.consecutiveFailures >= 3 && !this.useVisionMode) {
+              // Will check visionEnabledSetting dynamically when needed
+              console.log('[AGENT] 3 consecutive failures, marking for potential vision mode');
               this.useVisionMode = true;
             }
           } else {
