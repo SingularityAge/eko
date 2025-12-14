@@ -8,10 +8,10 @@ import { Settings, Credential, DEFAULT_SETTINGS } from '../shared/types';
 
 const styles = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; min-width: 400px; }
+  body { font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; min-width: 400px; }
   .container { max-width: 500px; margin: 0 auto; padding: 20px; }
   .header { text-align: center; margin-bottom: 20px; }
-  .header h1 { font-size: 20px; color: #DA7756; }
+  .header h1 { font-family: 'Google Sans', sans-serif; font-size: 20px; font-weight: 500; color: #DA7756; }
   .header p { font-size: 12px; color: #666; margin-top: 4px; }
   .section { background: white; border-radius: 10px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
   .section-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #333; }
@@ -80,7 +80,7 @@ function OptionsPage() {
       <style>{styles}</style>
       <div className="container">
         <div className="header">
-          <h1>AutoBrowser Settings</h1>
+          <h1>Autobrowser Settings</h1>
           <p>Configure your browsing agent</p>
         </div>
 

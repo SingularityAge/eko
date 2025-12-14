@@ -208,7 +208,7 @@ const CoffeeIcon = () => (
 );
 
 const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Vollkorn:wght@500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap');
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -239,11 +239,11 @@ const styles = `
   }
 
   .header h1 {
-    font-family: 'Vollkorn', Georgia, serif;
+    font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 26px;
     font-weight: 500;
     color: #DA7756;
-    letter-spacing: -0.5px;
+    letter-spacing: -0.3px;
   }
 
   .header .status {
