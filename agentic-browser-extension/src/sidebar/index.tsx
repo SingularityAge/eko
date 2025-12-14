@@ -1226,7 +1226,7 @@ function Sidebar() {
   };
 
   // Debounce API key validation
-  const apiKeyValidationTimeout = useRef<NodeJS.Timeout | null>(null);
+  const apiKeyValidationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleApiKeyChange = (key: string) => {
     setApiKey(key);
     setApiKeyValid(null);
