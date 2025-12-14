@@ -742,7 +742,7 @@ const styles = `
   }
 
   .glass-card h2 {
-    font-family: 'Vollkorn', Georgia, serif;
+    font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 22px;
     font-weight: 500;
     color: #2D2A26;
@@ -801,7 +801,7 @@ const styles = `
   }
 
   .modal-header h2 {
-    font-family: 'Vollkorn', Georgia, serif;
+    font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 22px;
     font-weight: 500;
     color: #2D2A26;
